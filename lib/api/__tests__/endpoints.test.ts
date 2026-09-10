@@ -197,6 +197,29 @@ describe("评审 / 审核接口", () => {
     expect((config.data as FormData).get("score")).toBe("88")
   })
 
+  it("评语为空时提交空字符串，不能是字面量 undefined / null", () => {
+    // FormData.append 会把 undefined / null 强制转成 "undefined" / "null"，
+    // 后端会把这五个字母当成真实评语存下来。
+    judge.uploadWorkScoreInfo(9, 88, undefined)
+    expect((lastCall().data as FormData).get("opinion")).toBe("")
+
+    judge.uploadWorkScoreInfo(9, 88, null)
+    expect((lastCall().data as FormData).get("opinion")).toBe("")
+
+    judge.uploadWorkScoreInfo(9, 88, "")
+    expect((lastCall().data as FormData).get("opinion")).toBe("")
+
+    judge.uploadWorkJudgeInfo(9, true, undefined)
+    expect((lastCall().data as FormData).get("opinion")).toBe("")
+
+    judge.uploadWorkJudgeInfo(9, true, null)
+    expect((lastCall().data as FormData).get("opinion")).toBe("")
+
+    // 有内容时必须原样透传
+    judge.uploadWorkScoreInfo(9, 88, "思路清晰")
+    expect((lastCall().data as FormData).get("opinion")).toBe("思路清晰")
+  })
+
   it("一键导入沿用 /review/import?depId=1 与 file 字段", () => {
     judge.importAccountsFromExcel(new File(["x"], "a.xlsx"))
     const config = lastCall()

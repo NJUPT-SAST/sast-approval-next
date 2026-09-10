@@ -192,7 +192,7 @@ function ReviewDetailContent() {
     }
     setSubmitting(true)
     try {
-      await uploadWorkScoreInfo(id, numeric, opinion ?? "")
+      await uploadWorkScoreInfo(id, numeric, opinion)
       toast.success("✅ 提交成功", { description: "自动返回列表" })
       router.back()
     } catch {
