@@ -6,14 +6,15 @@ import { apis } from "./client"
  * 提交项目审核列表
  * @param workId 项目 id
  * @param accept 是否通过
- * @param opinion 对通过情况的说明
+ * @param opinion 对通过情况的说明，为空时提交空字符串
  * @return axios 对象
  */
-export const uploadWorkJudgeInfo = (workId: number, accept: boolean, opinion: string) => {
+export const uploadWorkJudgeInfo = (workId: number, accept: boolean, opinion?: string | null) => {
   const data = new FormData()
   data.append("id", workId.toString())
   data.append("accept", accept.toString())
-  data.append("opinion", opinion)
+  // FormData 会把 undefined / null 转成字面量 "undefined" / "null"，必须先归一化
+  data.append("opinion", opinion ?? "")
   return apis({
     method: "POST",
     url: "/review/upload",
@@ -126,14 +127,15 @@ export const getJudgeWorkTotal = (workId: number) => {
  * 提交项目评分信息
  * @param workId 项目 id
  * @param score 评的分 0 ~ 100
- * @param opinion 评语
+ * @param opinion 评语，为空时提交空字符串
  * @return axios 对象
  */
-export const uploadWorkScoreInfo = (workId: number, score: number, opinion: string) => {
+export const uploadWorkScoreInfo = (workId: number, score: number, opinion?: string | null) => {
   const data = new FormData()
   data.append("id", workId.toString())
   data.append("score", score.toString())
-  data.append("opinion", opinion)
+  // FormData 会把 undefined / null 转成字面量 "undefined" / "null"，必须先归一化
+  data.append("opinion", opinion ?? "")
   return apis({
     method: "POST",
     url: "/score/upload",
