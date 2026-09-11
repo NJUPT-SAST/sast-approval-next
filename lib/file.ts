@@ -35,21 +35,40 @@ export function getOriginalFileName(url: string) {
 }
 
 /**
- * 后端返回的 blob 接口在出错时会返回 JSON。
- * 该函数按旧版逻辑判断响应类型并落盘。
+ * 后端返回的 blob 接口在出错时会返回 JSON（形如 `{status:"failure", message:"..."}`），
+ * 且 HTTP 状态码仍是 200，axios 不会 reject，只能靠响应体类型判断。
+ *
+ * 注意不能用 `!==` 精确比较 MIME：后端 `setContentType("application/json")` 之后
+ * 紧跟 `setCharacterEncoding("utf-8")`，Servlet 会把两者合并成
+ * `application/json;charset=utf-8`，精确比较会把错误响应当成文件存盘，
+ * 用户拿到一个内容是 JSON 报错的 .xlsx，界面却提示「导出成功」。
  */
-export function saveBlobResponse(
+export async function saveBlobResponse(
   data: Blob,
   filename: string,
   messages: { success: string; failure: string }
 ) {
-  if (data.type !== "application/json") {
+  if (!data.type.startsWith("application/json")) {
     saveBlob(new Blob([data]), filename)
     toast.success(messages.success, { id: "download" })
     return true
   }
-  toast.error(messages.failure, { id: "download" })
+  toast.error(messages.failure, {
+    id: "download",
+    description: await readBlobErrorMessage(data),
+  })
   return false
+}
+
+/** 从后端的 JSON 错误响应里取出 message，取不到则返回 undefined（只显示通用提示） */
+async function readBlobErrorMessage(data: Blob): Promise<string | undefined> {
+  try {
+    const payload = JSON.parse(await data.text())
+    const message = payload?.message ?? payload?.errMsg
+    return typeof message === "string" && message.length > 0 ? message : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
