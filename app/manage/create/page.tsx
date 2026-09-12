@@ -11,7 +11,7 @@ import { Steps } from "@/components/common/steps"
 import { CompetitionForm, type ReviewSetting } from "@/components/competition/competition-form"
 import { WhiteListForm } from "@/components/competition/white-list-form"
 import { createCompetitionInfo, editWhiteList } from "@/lib/api/admin"
-import { tempelate } from "@/lib/constants/form-templates"
+import { template } from "@/lib/constants/form-templates"
 import { withQuery } from "@/lib/navigation"
 import { useUserStore } from "@/lib/store/user"
 import type { CompetitionInfoType } from "@/lib/types/api"
@@ -47,7 +47,7 @@ export default function CreateCompetitionPage() {
     submit_end_time: "",
     review_begin_time: "",
     review_end_time: "",
-    table: tempelate[0],
+    table: template[0],
     type: 0,
     min_team_members: 1,
     max_team_members: 1,
@@ -98,7 +98,7 @@ export default function CreateCompetitionPage() {
 
   const handleTemplateChange = (value: string) => {
     setTemplateValue(value)
-    patchInfo({ table: tempelate[Number(value)] as unknown as object })
+    patchInfo({ table: template[Number(value)] as unknown as object })
   }
 
   /** 发布活动 */

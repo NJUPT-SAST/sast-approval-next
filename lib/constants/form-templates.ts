@@ -4,7 +4,7 @@ import type { SchemaNode } from "@/components/schema-form/types"
 const collegeEnum = [...COLLEGES]
 
 /** 创建比赛时可选的项目提交表单模板，结构与旧版 form-render schema 完全一致 */
-export const tempelate: SchemaNode[] = [
+export const template: SchemaNode[] = [
   {
     type: "object",
     labelWidth: 120,

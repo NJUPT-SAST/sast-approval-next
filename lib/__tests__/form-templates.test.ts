@@ -1,5 +1,5 @@
 import { COLLEGES } from "@/lib/constants/colleges"
-import { option, tempelate } from "@/lib/constants/form-templates"
+import { option, template } from "@/lib/constants/form-templates"
 import type { SchemaNode } from "@/components/schema-form/types"
 
 const names = (node: SchemaNode) => Object.keys(node.properties ?? {})
@@ -7,11 +7,11 @@ const names = (node: SchemaNode) => Object.keys(node.properties ?? {})
 describe("项目提交表单模板", () => {
   it("保留旧版的三套模板与名称", () => {
     expect(option).toEqual(["创新杯模板", "公益创意模板", "挑战杯模板"])
-    expect(tempelate).toHaveLength(3)
+    expect(template).toHaveLength(3)
   })
 
   it("创新杯模板字段与旧版一致", () => {
-    expect(names(tempelate[0])).toEqual([
+    expect(names(template[0])).toEqual([
       "学院",
       "项目名称",
       "项目类别",
@@ -22,16 +22,16 @@ describe("项目提交表单模板", () => {
       "项目PPT",
       "视频等附件",
     ])
-    expect(tempelate[0].properties?.申报书.widget).toBe("customUpload")
-    expect(tempelate[0].properties?.申报书.props).toMatchObject({
+    expect(template[0].properties?.申报书.widget).toBe("customUpload")
+    expect(template[0].properties?.申报书.props).toMatchObject({
       inputName: "申报书",
       accept: ".pdf",
     })
-    expect(tempelate[0].properties?.视频等附件.required).toBe(false)
+    expect(template[0].properties?.视频等附件.required).toBe(false)
   })
 
   it("公益创意模板字段与旧版一致", () => {
-    expect(names(tempelate[1])).toEqual([
+    expect(names(template[1])).toEqual([
       "项目名称",
       "项目类型",
       "活动策划书",
@@ -41,7 +41,7 @@ describe("项目提交表单模板", () => {
       "数字媒体项目说明书",
       "数字媒体项目参考资料",
     ])
-    expect(tempelate[1].properties?.项目类型.enum).toEqual([
+    expect(template[1].properties?.项目类型.enum).toEqual([
       "活动策划书",
       "项目企划书",
       "数字媒体项目",
@@ -49,7 +49,7 @@ describe("项目提交表单模板", () => {
   })
 
   it("挑战杯模板字段与旧版一致", () => {
-    expect(names(tempelate[2])).toEqual([
+    expect(names(template[2])).toEqual([
       "学院",
       "项目名称",
       "项目组别",
@@ -59,14 +59,14 @@ describe("项目提交表单模板", () => {
       "项目 PPT",
       "附件",
     ])
-    expect(tempelate[2].properties?.项目组别.enum).toHaveLength(5)
+    expect(template[2].properties?.项目组别.enum).toHaveLength(5)
   })
 
   it("学院下拉沿用完整的 20 个学院，顺序即审核学院代号", () => {
     expect(COLLEGES).toHaveLength(20)
     expect(COLLEGES[0]).toBe("通信与信息工程学院")
     expect(COLLEGES[19]).toBe("波特兰学院")
-    expect(tempelate[0].properties?.学院.enum).toEqual([...COLLEGES])
-    expect(tempelate[0].properties?.学院.enumNames).toEqual([...COLLEGES])
+    expect(template[0].properties?.学院.enum).toEqual([...COLLEGES])
+    expect(template[0].properties?.学院.enumNames).toEqual([...COLLEGES])
   })
 })

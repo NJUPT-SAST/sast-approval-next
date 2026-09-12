@@ -192,9 +192,13 @@ function ReviewDetailContent() {
     }
     setSubmitting(true)
     try {
-      await uploadWorkScoreInfo(id, numeric, opinion ?? "")
-      toast.success("✅ 提交成功", { description: "自动返回列表" })
-      router.back()
+      const res = await uploadWorkScoreInfo(id, numeric, opinion ?? "")
+      if (res.data?.success) {
+        toast.success("✅ 提交成功", { description: "自动返回列表" })
+        router.back()
+      } else {
+        toast.error("😭 提交失败", { description: res.data?.errMsg ?? "请稍后重试" })
+      }
     } catch {
       toast.error("😭 提交失败，请稍后重试")
     } finally {
@@ -214,9 +218,13 @@ function ReviewDetailContent() {
     }
     setSubmitting(true)
     try {
-      await uploadWorkJudgeInfo(id, isPass, opinion)
-      toast.success("✅ 提交成功", { description: "自动返回列表" })
-      router.back()
+      const res = await uploadWorkJudgeInfo(id, isPass, opinion)
+      if (res.data?.success) {
+        toast.success("✅ 提交成功", { description: "自动返回列表" })
+        router.back()
+      } else {
+        toast.error("😭 提交失败", { description: res.data?.errMsg ?? "请稍后重试" })
+      }
     } catch {
       toast.error("😭 提交失败，请稍后重试")
     } finally {

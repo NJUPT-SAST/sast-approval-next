@@ -22,7 +22,7 @@ import { EmptyState, LoadingState } from "@/components/common/states"
 import { CompetitionForm, type ReviewSetting } from "@/components/competition/competition-form"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { deleteCompetitionInfo, editCompetitionInfo, viewCompetitionInfo } from "@/lib/api/admin"
-import { tempelate } from "@/lib/constants/form-templates"
+import { template } from "@/lib/constants/form-templates"
 import { withQuery } from "@/lib/navigation"
 import { useUiStore } from "@/lib/store/ui"
 import { useUserStore } from "@/lib/store/user"
@@ -171,7 +171,7 @@ function EditCompetitionContent() {
     if (value === "-1") {
       patchInfo({ table: (preSchema ?? {}) as object })
     } else {
-      patchInfo({ table: tempelate[Number(value)] as unknown as object })
+      patchInfo({ table: template[Number(value)] as unknown as object })
     }
   }
 
