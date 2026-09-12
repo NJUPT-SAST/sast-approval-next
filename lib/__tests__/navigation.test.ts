@@ -2,6 +2,7 @@ import {
   NAV_BY_ROLE,
   breadcrumbNameMap,
   canAccess,
+  isTopLevelPath,
   withQuery,
   activeNavHref,
 } from "@/lib/navigation"
@@ -94,4 +95,76 @@ describe("角色路由与导航", () => {
     expect(activeNavHref("user", "/manage/judge")).toBeNull()
     expect(activeNavHref("offline", "/manage")).toBeNull()
   })
+
+  it.each([{ pathname: "/" }, { pathname: "/account" }, { pathname: "/manage/judge" }])(
+    "offline 角色访问 $pathname 时永远不是一级页面",
+    ({ pathname }) => {
+      expect(isTopLevelPath("offline", pathname)).toBe(false)
+    }
+  )
+
+  it.each([{ role: "admin" }, { role: "approver" }, { role: "judge" }, { role: "user" }] as const)(
+    "登录角色 $role 的根路径是一级页面",
+    ({ role }) => {
+      expect(isTopLevelPath(role, "/")).toBe(true)
+    }
+  )
+
+  it.each([
+    { role: "admin", pathname: "/manage/judge" },
+    { role: "admin", pathname: "/manage/judge/" },
+    { role: "approver", pathname: "/review/student" },
+    { role: "judge", pathname: "/import/" },
+    { role: "user", pathname: "/activity/" },
+  ] as const)("角色自身菜单路径与单个结尾斜杠是一级页面：$role $pathname", ({ role, pathname }) => {
+    expect(isTopLevelPath(role, pathname)).toBe(true)
+  })
+
+  it.each([
+    // 详情等子路径可以访问，但不是一级页面
+    { role: "admin", pathname: "/activity/detail" },
+    { role: "admin", pathname: "/manage/create" },
+    { role: "approver", pathname: "/review/detail" },
+    { role: "user", pathname: "/activity/register" },
+    // 其他角色专属的菜单路径
+    { role: "user", pathname: "/manage/judge" },
+    { role: "admin", pathname: "/import" },
+    { role: "user", pathname: "/review/student" },
+    // 未知路径
+    { role: "admin", pathname: "/not-exist" },
+    { role: "admin", pathname: "/management" },
+    // 归一化只去掉一个结尾斜杠，双斜杠不匹配
+    { role: "admin", pathname: "/manage/judge//" },
+  ] as const)(
+    "子路径、其他角色专属路径与未知路径不是一级页面：$role $pathname",
+    ({ role, pathname }) => {
+      expect(isTopLevelPath(role, pathname)).toBe(false)
+    }
+  )
+
+  it.each([
+    // /manage/judge/detail 同时以 /manage 与 /manage/judge 为前缀，取最长匹配
+    { role: "admin", pathname: "/manage/judge/detail", expected: "/manage/judge" },
+    // 单个结尾斜杠不改变匹配结果
+    { role: "admin", pathname: "/manage/judge/", expected: "/manage/judge" },
+    { role: "admin", pathname: "/manage/", expected: "/manage" },
+    { role: "judge", pathname: "/import/", expected: "/import" },
+    { role: "user", pathname: "/activity/register", expected: "/activity" },
+  ] as const)(
+    "activeNavHref 取最长匹配且忽略单个结尾斜杠：$role 访问 $pathname 时高亮 $expected",
+    ({ role, pathname, expected }) => {
+      expect(activeNavHref(role, pathname)).toBe(expected)
+    }
+  )
+
+  it.each([
+    // 与 /manage 共享前缀但缺少 "/" 段边界，不能误匹配
+    { role: "admin", pathname: "/management" },
+    { role: "admin", pathname: "/manage-judge" },
+  ] as const)(
+    "activeNavHref 要求路径段边界：$role 访问 $pathname 时不匹配任何菜单项",
+    ({ role, pathname }) => {
+      expect(activeNavHref(role, pathname)).toBeNull()
+    }
+  )
 })
