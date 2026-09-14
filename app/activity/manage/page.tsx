@@ -147,12 +147,12 @@ function ManageDetailContent() {
   const runExport = (request: Promise<{ data: unknown }>, filename: string, label: string) => {
     toast.loading(`${label}，请稍等`, { id: "download" })
     request
-      .then((res) => {
+      .then((res) =>
         saveBlobResponse(res.data as Blob, filename, {
           success: `😸 ${label}成功`,
           failure: `😭 ${label}失败`,
         })
-      })
+      )
       .catch((error) => notifyRequestError(error, "😭 请求失败", { id: "download" }))
   }
 
@@ -255,7 +255,11 @@ function ManageDetailContent() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() =>
-                    runExport(exportTeamInfo(id), `${competitionName} 的附件.xlsx`, "参赛信息导出")
+                    runExport(
+                      exportTeamInfo(id),
+                      `${competitionName} 的参赛信息.xlsx`,
+                      "参赛信息导出"
+                    )
                   }
                 >
                   <FolderDownIcon className="size-4" />
@@ -287,7 +291,7 @@ function ManageDetailContent() {
           },
           {
             key: "approve",
-            label: "已评审",
+            label: "已审批",
             value: regState.revNum,
             icon: ClipboardCheckIcon,
             tone: "text-chart-3",
@@ -405,8 +409,8 @@ function ManageDetailContent() {
                 onClick={() =>
                   runExport(
                     exportWorkFileDataToAssignScorer(id),
-                    `${competitionName} 的参赛数据.xlsx`,
-                    "参赛队伍导出"
+                    `${competitionName} 的评委模板.xlsx`,
+                    "评委模板下载"
                   )
                 }
               >
@@ -431,7 +435,12 @@ function ManageDetailContent() {
                 导入评委分配
               </Button>
               <p className="text-muted-foreground text-xs leading-relaxed">
-                导出的附件为 zip 压缩包，评审结果与参赛数据为 xlsx 表格。
+                评委模板含「作品id / 作品名称 / 项目类别」三列，填入评委学号后原表导入即可。
+                项目附件为 zip 压缩包，参赛信息与评审结果为 xlsx 表格。
+              </p>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                注：评审结果目前仅包含已评分的作品，未被评分的作品不会出现在表中；
+                参赛信息暂不含指导老师与评分进度，需后端支持后补充。
               </p>
             </div>
           </Section>

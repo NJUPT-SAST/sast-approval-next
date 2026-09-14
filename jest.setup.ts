@@ -38,6 +38,19 @@ if (typeof window !== "undefined") {
   if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = () => {}
   }
+
+  // jsdom 的 Blob 没有实现 text()（也没有 Response 可以兜），用 FileReader 补上。
+  // 浏览器与 Tauri WebView2 都原生支持，仅测试环境需要。
+  if (typeof Blob !== "undefined" && !Blob.prototype.text) {
+    Blob.prototype.text = function (this: Blob) {
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result ?? ""))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsText(this)
+      })
+    }
+  }
 }
 
 type MockNextImageProps = React.ComponentPropsWithoutRef<"img"> & {

@@ -114,7 +114,7 @@ function RowMenu({
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => onExport(item)}>
           <DownloadIcon className="size-4" />
-          导出参赛数据
+          下载评委模板
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -156,12 +156,12 @@ export default function ManagePage() {
   const handleExport = (item: ManageCompetitionItem) => {
     toast.loading("😸 导出中，请稍等", { id: "download" })
     exportWorkFileDataToAssignScorer(item.id)
-      .then((res) => {
-        saveBlobResponse(res.data as Blob, `${item.name}参赛数据.xlsx`, {
-          success: `😸 ${item.name} 的参赛数据已导出`,
-          failure: `😭 ${item.name} 的参赛数据未能成功导出`,
+      .then((res) =>
+        saveBlobResponse(res.data as Blob, `${item.name} 的评委模板.xlsx`, {
+          success: `😸 ${item.name} 的评委模板已下载`,
+          failure: `😭 ${item.name} 的评委模板下载失败`,
         })
-      })
+      )
       .catch((error) => notifyRequestError(error, "😭 请求失败", { id: "download" }))
   }
 
@@ -185,7 +185,7 @@ export default function ManagePage() {
     <PageContainer size="wide">
       <PageHeader
         title="比赛管理"
-        description="创建、维护全部比赛活动，导出参赛数据并发布公告。"
+        description="创建、维护全部比赛活动，下载评委模板并发布公告。"
         actions={
           <Button asChild>
             <Link href="/manage/create">
