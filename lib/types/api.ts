@@ -150,3 +150,12 @@ export interface ManageDetailItem {
   isAssignJudge: number
   judges: string[]
 }
+
+/**
+ * 学院。`id` 即「审核学院代号」，是 review_settings 的 key。
+ * 唯一事实来源是后端 department 表，前端不得用本地清单的下标推导。
+ */
+export interface Department {
+  id: number
+  name: string
+}

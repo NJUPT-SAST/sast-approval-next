@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { COLLEGES } from "@/lib/constants/colleges"
+import type { Department } from "@/lib/types/api"
 
 type ReviewerSetProps = {
   value: { key: number; value: string }
@@ -17,10 +17,26 @@ type ReviewerSetProps = {
   setKey: (index: number, key: number) => void
   setValue: (index: number, value: string) => void
   disabled?: boolean
+  /** 学院列表，来自 GET /com/department/list */
+  departments: Department[]
+  departmentsLoading?: boolean
 }
 
 /** 单条「审核者学号 + 负责学院」配置，等价于旧版 ReviewSet */
-export function ReviewerSet({ value, index, setKey, setValue, disabled }: ReviewerSetProps) {
+export function ReviewerSet({
+  value,
+  index,
+  setKey,
+  setValue,
+  disabled,
+  departments,
+  departmentsLoading,
+}: ReviewerSetProps) {
+  // 已保存的学院代号在后端列表里找不到（学院被删除或合并），需要显式暴露，
+  // 否则下拉只会渲染成空白，管理员无从得知这条审核关系已经失效。
+  const isOrphanKey = value.key > 0 && !departments.some((item) => item.id === value.key)
+  const selectDisabled = disabled || departmentsLoading || departments.length === 0
+
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="space-y-1.5">
@@ -42,19 +58,27 @@ export function ReviewerSet({ value, index, setKey, setValue, disabled }: Review
         <Select
           value={value.key === -1 ? undefined : String(value.key)}
           onValueChange={(next) => setKey(index, Number(next))}
-          disabled={disabled}
+          disabled={selectDisabled}
         >
           <SelectTrigger id={`reviewer-college-${index}`} className="w-full">
-            <SelectValue placeholder="选择学院" />
+            <SelectValue placeholder={departmentsLoading ? "学院加载中……" : "选择学院"} />
           </SelectTrigger>
           <SelectContent>
-            {COLLEGES.map((college, collegeIndex) => (
-              <SelectItem key={college} value={String(collegeIndex + 1)}>
-                {college}
+            {isOrphanKey ? (
+              <SelectItem value={String(value.key)} disabled>
+                未知学院（代号 {value.key}）
+              </SelectItem>
+            ) : null}
+            {departments.map((department) => (
+              <SelectItem key={department.id} value={String(department.id)}>
+                {department.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {isOrphanKey ? (
+          <p className="text-destructive text-xs">该学院已不存在，请重新选择。</p>
+        ) : null}
       </div>
     </div>
   )

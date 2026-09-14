@@ -80,3 +80,17 @@ export const downloadCertificate = (url: string) => {
     },
   })
 }
+
+/**
+ * 获取学院列表（免鉴权）
+ *
+ * 返回的 `id` 即「审核学院代号」，是 review_settings 的 key，
+ * 必须直接使用，不能用列表下标推导，否则学院增删后会静默错位。
+ * @returns axios对象
+ */
+export const getDepartmentList = () => {
+  return apis({
+    method: "get",
+    url: "/com/department/list",
+  })
+}

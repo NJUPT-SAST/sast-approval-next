@@ -19,6 +19,7 @@ import { CoverUploader } from "@/components/competition/cover-uploader"
 import { ReviewerSet } from "@/components/competition/reviewer-set"
 import { TimeRangeField } from "@/components/competition/time-range-field"
 import { option } from "@/lib/constants/form-templates"
+import { useDepartments } from "@/lib/hooks/use-departments"
 import { cn } from "@/lib/utils"
 import type { CompetitionInfoType } from "@/lib/types/api"
 
@@ -75,6 +76,8 @@ export function CompetitionForm({
 }: CompetitionFormProps) {
   const introduceLength = info.introduce?.length ?? 0
   const introduceShort = introduceLength > 0 && introduceLength < 100
+  // 在此统一拉取，ReviewerSet 会渲染多份，hook 内的模块级缓存保证只发一次请求
+  const { departments, loading: departmentsLoading } = useDepartments()
 
   return (
     <SectionList>
@@ -290,6 +293,8 @@ export function CompetitionForm({
                       setKey={setReviewerKey}
                       setValue={setReviewerValue}
                       disabled={disabled}
+                      departments={departments}
+                      departmentsLoading={departmentsLoading}
                     />
                   )
                 )}

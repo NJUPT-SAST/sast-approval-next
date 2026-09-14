@@ -77,6 +77,14 @@ describe("公共接口", () => {
       params: { url: "https://cdn/a.pdf" },
     })
   })
+
+  it("getDepartmentList 走免鉴权的 /com/department/list", () => {
+    publicApi.getDepartmentList()
+    expect(lastCall()).toMatchObject({
+      method: "get",
+      url: "/com/department/list",
+    })
+  })
 })
 
 describe("用户接口", () => {
