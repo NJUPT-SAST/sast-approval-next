@@ -136,8 +136,10 @@ public/assets/             Logo、登录背景、头像等图片
 - **少用卡片**：页面分区用 `Section` + `SectionList`（标题 + 分割线）组织，长表单用 `layout="split"`（左标题右表单）；
   只有表格 / 列表这类需要边界的内容才包一层 `TableSurface` / `MobileList`。
 - **表格在手机上换成列表**：桌面端 `<TableSurface className="hidden md:block">`，手机端 `<MobileList className="md:hidden">` + `MobileListItem`。
-- **表单类页面的操作按钮**：桌面端放在 `PageHeader` 的 `actions`（并加 `hideActionsOnMobile`），
-  同一组按钮再放进页面末尾的 `MobileActionBar`，手机上固定在底部。
+- **表单类页面的操作按钮**：桌面端放在表单内容末尾，并使用上边框与正文分隔；
+  同一组主要操作放进页面末尾的 `MobileActionBar`，手机上固定在底部。表单页的
+  `PageHeader` 只显示标题与描述，不放提交、保存、取消等操作。详情页、列表页的创建、
+  下载、筛选等页面级操作仍可放入 `PageHeader.actions`。
 - **导航**：桌面端为侧边栏；手机端一级页面显示底部 `MobileTabBar`，子页面隐藏底栏、页头显示返回按钮
   （由 `isTopLevelPath()` 判定）。页脚只在 `md` 及以上显示。
 - Tailwind v4 的堆叠变体从左到右生效，作用于子元素请写 `[&>*:first-child]:…` 这类任意变体，不要写 `first:*:…`。

@@ -6,24 +6,15 @@ import { cn } from "@/lib/utils"
 type PageHeaderProps = {
   title: React.ReactNode
   description?: React.ReactNode
-  /** 右侧操作区；配合 `hideActionsOnMobile` 与 `MobileActionBar` 在手机上改为底部操作栏 */
+  /** 页面级操作区；表单提交操作应放在表单底部，并使用 `MobileActionBar` 适配手机端 */
   actions?: React.ReactNode
-  /** 手机上隐藏头部操作区（由页面底部的 MobileActionBar 承接） */
-  hideActionsOnMobile?: boolean
   /** 标题上方的小字眉题，例如所属比赛名 */
   eyebrow?: React.ReactNode
   className?: string
 }
 
 /** 页面标题区，替代旧版 TopBar 的标题部分 */
-export function PageHeader({
-  title,
-  description,
-  actions,
-  hideActionsOnMobile,
-  eyebrow,
-  className,
-}: PageHeaderProps) {
+export function PageHeader({ title, description, actions, eyebrow, className }: PageHeaderProps) {
   return (
     <div
       className={cn(
@@ -42,16 +33,7 @@ export function PageHeader({
           <p className="text-muted-foreground text-balance-pretty text-sm">{description}</p>
         ) : null}
       </div>
-      {actions ? (
-        <div
-          className={cn(
-            "flex shrink-0 flex-wrap items-center gap-2",
-            hideActionsOnMobile && "hidden sm:flex"
-          )}
-        >
-          {actions}
-        </div>
-      ) : null}
+      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   )
 }

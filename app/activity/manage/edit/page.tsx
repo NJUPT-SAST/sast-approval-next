@@ -285,8 +285,6 @@ function EditCompetitionContent() {
         eyebrow={competitionInfo.name || undefined}
         title="编辑比赛"
         description="修改比赛的基本信息、时间安排与审核设置。"
-        actions={primaryActions}
-        hideActionsOnMobile
       />
 
       <div className="mt-10">
