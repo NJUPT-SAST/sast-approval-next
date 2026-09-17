@@ -1,0 +1,182 @@
+name: Deploy frontend to Tencent Cloud
+
+# Required GitHub Secrets (preferably in the `production` Environment):
+# DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS
+# DEPLOY_PORT is optional and defaults to 22.
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crs-production-frontend-deploy
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 20.x
+  PNPM_VERSION: 10.30.3
+  DEPLOY_DIR: /www/crs.sast.fun
+  BACKUP_DIR: /www/crs.sast.fun.backup
+  NEXT_PUBLIC_APP_NAME: "通用比赛管理评审系统"
+  NEXT_PUBLIC_API_BASE_URL: https://crs.sast.fun/api
+  NEXT_PUBLIC_API_ORIGIN: https://crs.sast.fun/api
+
+jobs:
+  build:
+    name: Build frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run lint
+        run: pnpm lint
+
+      - name: Run typecheck
+        run: pnpm typecheck
+
+      - name: Run tests
+        run: pnpm test --runInBand
+
+      - name: Build static export
+        run: pnpm build
+
+      - name: Verify static export
+        shell: bash
+        run: |
+          test -f out/index.html
+          test -d out/_next
+
+      - name: Upload static export
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-static-export
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: Publish to crs.sast.fun
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://crs.sast.fun
+
+    steps:
+      - name: Download static export
+        uses: actions/download-artifact@v4
+        with:
+          name: nextjs-static-export
+          path: out/
+
+      - name: Configure SSH host verification
+        shell: bash
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Publish files and keep one backup
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_DIR: ${{ env.DEPLOY_DIR }}
+          BACKUP_DIR: ${{ env.BACKUP_DIR }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+
+          key_file="$(mktemp)"
+          archive_file="$(mktemp --suffix=.tar.gz)"
+          trap 'rm -f "$key_file" "$archive_file"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$key_file"
+          chmod 600 "$key_file"
+
+          port="${DEPLOY_PORT:-22}"
+          tar -C out -czf "$archive_file" .
+          archive_name="crs-frontend-${GITHUB_SHA}.tar.gz"
+          scp \
+            -i "$key_file" \
+            -P "$port" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$archive_file" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/$archive_name"
+
+          ssh \
+            -i "$key_file" \
+            -p "$port" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_DIR='$DEPLOY_DIR' BACKUP_DIR='$BACKUP_DIR' DEPLOY_ARCHIVE='/tmp/$archive_name' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          staging_dir="$(mktemp -d /tmp/crs-frontend.XXXXXX)"
+          old_dir="${DEPLOY_DIR}.old"
+          cleanup() {
+            rm -rf "$staging_dir" "$old_dir" "$DEPLOY_ARCHIVE"
+          }
+          trap cleanup EXIT
+
+          tar -xzf "$DEPLOY_ARCHIVE" -C "$staging_dir"
+          test -f "$staging_dir/index.html"
+          test -d "$staging_dir/_next"
+
+          # Keep the previous online version at the documented backup path.
+          if [ -e "$DEPLOY_DIR" ]; then
+            rm -rf "$BACKUP_DIR"
+            cp -a "$DEPLOY_DIR" "$BACKUP_DIR"
+            mv "$DEPLOY_DIR" "$old_dir"
+          fi
+
+          # Rename the complete staging directory so Caddy never sees a
+          # partially uploaded build. Restore the old version if this fails.
+          if ! mv "$staging_dir" "$DEPLOY_DIR"; then
+            if [ -e "$old_dir" ]; then
+              mv "$old_dir" "$DEPLOY_DIR"
+            fi
+            exit 1
+          fi
+
+          rm -rf "$old_dir"
+          echo "Frontend published to $DEPLOY_DIR"
+          REMOTE_SCRIPT
+
+      - name: Smoke test production site
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-delay 2 \
+            https://crs.sast.fun/ >/dev/null
