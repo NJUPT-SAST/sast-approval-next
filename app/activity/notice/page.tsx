@@ -252,8 +252,6 @@ function NoticeContent() {
         eyebrow={competitionName || undefined}
         title={isEdit ? "编辑公告" : "发布公告"}
         description="向指定角色推送比赛通知，可选择立即发布或定时发布。"
-        actions={primaryAction}
-        hideActionsOnMobile
       />
 
       <SectionList className="mt-8">

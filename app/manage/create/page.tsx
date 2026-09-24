@@ -196,8 +196,6 @@ export default function CreateCompetitionPage() {
       <PageHeader
         title="创建比赛"
         description="填写比赛基本信息与时间安排，发布后可继续设置报名白名单。"
-        actions={actions}
-        hideActionsOnMobile
       />
 
       <Steps steps={STEPS} current={currentStep} className="mt-8" />

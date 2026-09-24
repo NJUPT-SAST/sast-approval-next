@@ -90,8 +90,6 @@ function WhiteListContent() {
         eyebrow={competitionName || undefined}
         title="编辑白名单"
         description="限制可以报名该比赛的学号范围。上传新的白名单会覆盖原有名单；关闭则表示面向全校开放。"
-        actions={actions}
-        hideActionsOnMobile
       />
 
       <div className="mt-8">
@@ -103,6 +101,8 @@ function WhiteListContent() {
           disabled={submitting}
         />
       </div>
+
+      <div className="mt-10 hidden justify-end gap-2 border-t pt-6 sm:flex">{actions}</div>
 
       <MobileActionBar>{actions}</MobileActionBar>
     </PageContainer>
