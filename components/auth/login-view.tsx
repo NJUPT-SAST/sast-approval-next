@@ -2,8 +2,10 @@
 
 import * as React from "react"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
+  EyeIcon,
+  EyeOffIcon,
   KeyRoundIcon,
   Loader2Icon,
   LockIcon,
@@ -19,10 +21,14 @@ import { Label } from "@/components/ui/label"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { login } from "@/lib/api/public"
 import { getUserProfile } from "@/lib/api/user"
+import { notifyRequestError } from "@/lib/api/errors"
 import { useValidateCode } from "@/lib/hooks/use-validate-code"
+import { canAccess } from "@/lib/navigation"
 import { STORAGE_KEYS, writeStorage } from "@/lib/storage"
 import { roleNumberToState, useUserStore } from "@/lib/store/user"
 import { identifyUser } from "@/lib/monitoring"
+
+type Field = "username" | "password" | "validate"
 
 const HIGHLIGHTS = [
   { icon: SparklesIcon, title: "一站式赛事管理", desc: "创建、报名、提交、评审全流程闭环" },
@@ -32,6 +38,7 @@ const HIGHLIGHTS = [
 
 export function LoginView() {
   const router = useRouter()
+  const pathname = usePathname()
   const { imageUrl, captchaId, loading: captchaLoading, refresh } = useValidateCode()
   const setRole = useUserStore((state) => state.setRole)
   const setProfile = useUserStore((state) => state.setProfile)
@@ -39,54 +46,89 @@ export function LoginView() {
   const [username, setUsername] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [validate, setValidate] = React.useState("")
+  const [showPassword, setShowPassword] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
+  const [errors, setErrors] = React.useState<Partial<Record<Field, string>>>({})
+
+  /** 只在事件回调里调用，按 id 找到输入框并聚焦 */
+  const focusInput = (field: Field) => document.getElementById(`login-${field}`)?.focus()
+
+  /** 输入时顺手清掉该字段的错误提示 */
+  const bindField = (field: Field, setter: (value: string) => void) => ({
+    "aria-invalid": Boolean(errors[field]),
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      setter(event.target.value)
+      if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }))
+    },
+  })
+
+  /** 验证码作废：清空输入、换一张图并把光标放回验证码框 */
+  const resetCaptcha = () => {
+    setValidate("")
+    refresh()
+    focusInput("validate")
+  }
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const nextErrors: Record<string, string> = {}
+    const nextErrors: Partial<Record<Field, string>> = {}
     if (!username.trim()) nextErrors.username = "请输入学号"
     if (!password) nextErrors.password = "请输入密码"
     if (!validate.trim()) nextErrors.validate = "请输入验证码"
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
+    const firstInvalid = (["username", "password", "validate"] as const).find(
+      (field) => nextErrors[field]
+    )
+    if (firstInvalid) {
+      focusInput(firstInvalid)
+      return
+    }
 
     setSubmitting(true)
     try {
-      const res = await login(captchaId, validate, username.trim(), password)
+      const res = await login(captchaId, validate.trim(), username.trim(), password)
       if (!res.data.success) {
         toast.error("😭 登录失败", { description: res.data.errMsg ?? "请检查账号、密码与验证码" })
-        setValidate("")
-        refresh()
+        resetCaptcha()
+        setSubmitting(false)
         return
       }
 
       writeStorage(STORAGE_KEYS.token, res.data.data.token)
-      setRole(roleNumberToState(res.data.data.role))
+      const role = roleNumberToState(res.data.data.role)
 
-      const profileRes = await getUserProfile()
-      if (profileRes.data.success) {
-        const data = profileRes.data.data
-        setProfile({
-          code: data.code ?? "",
-          name: data.name ?? "",
-          college: data.college ?? "",
-          major: data.major ?? "未知",
-          contact: data.contact ?? "未知",
-        })
-        identifyUser(data.code ?? "", data.name ?? "")
-        toast.success("😸 登录成功", {
-          description: `${data.code ?? ""} ${data.name ?? ""} 欢迎回来`,
-        })
-      } else {
-        toast.error("😭 用户信息获取失败", { description: profileRes.data.errMsg ?? "" })
+      // 先拿到个人信息再切换角色：角色一变 AppShell 就会渲染主界面，
+      // 反过来做会先闪一下「未命名」的侧边栏
+      try {
+        const profileRes = await getUserProfile()
+        if (profileRes.data.success) {
+          const data = profileRes.data.data
+          setProfile({
+            code: data.code ?? "",
+            name: data.name ?? "",
+            college: data.college ?? "",
+            major: data.major ?? "未知",
+            contact: data.contact ?? "未知",
+          })
+          identifyUser(data.code ?? "", data.name ?? "")
+          toast.success("😸 登录成功", {
+            description: `${data.code ?? ""} ${data.name ?? ""} 欢迎回来`,
+          })
+        } else {
+          toast.warning("登录成功，但个人信息获取失败", {
+            description: profileRes.data.errMsg ?? "",
+          })
+        }
+      } catch {
+        toast.warning("登录成功，但个人信息获取失败", { description: "稍后可在「我的账号」中查看" })
       }
 
-      router.replace("/account")
-    } catch {
-      toast.error("😭 登录失败", { description: "网络异常，请稍后重试" })
-      refresh()
-    } finally {
+      setRole(role)
+      // 登录过期后在原页面重新登录，就留在原页面；否则进入「我的账号」
+      if (pathname === "/" || !canAccess(role, pathname)) router.replace("/account")
+    } catch (error) {
+      notifyRequestError(error, "😭 登录失败", { description: "请稍后重试" })
+      resetCaptcha()
       setSubmitting(false)
     }
   }
@@ -176,10 +218,10 @@ export function LoginView() {
                   id="login-username"
                   className="h-11 ps-9"
                   autoComplete="username"
+                  autoFocus
                   placeholder="请输入学号"
                   value={username}
-                  aria-invalid={Boolean(errors.username)}
-                  onChange={(event) => setUsername(event.target.value)}
+                  {...bindField("username", setUsername)}
                 />
               </div>
               {errors.username ? (
@@ -193,14 +235,26 @@ export function LoginView() {
                 <LockIcon className="text-muted-foreground pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2" />
                 <Input
                   id="login-password"
-                  type="password"
-                  className="h-11 ps-9"
+                  type={showPassword ? "text" : "password"}
+                  className="h-11 ps-9 pe-11"
                   autoComplete="current-password"
                   placeholder="请输入密码"
                   value={password}
-                  aria-invalid={Boolean(errors.password)}
-                  onChange={(event) => setPassword(event.target.value)}
+                  {...bindField("password", setPassword)}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                  aria-pressed={showPassword}
+                  className="text-muted-foreground hover:text-foreground absolute end-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOffIcon className="size-4" />
+                  ) : (
+                    <EyeIcon className="size-4" />
+                  )}
+                </button>
               </div>
               {errors.password ? (
                 <p className="text-destructive text-xs">{errors.password}</p>
@@ -217,16 +271,18 @@ export function LoginView() {
                     className="h-11 ps-9"
                     placeholder="请输入验证码"
                     autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                     value={validate}
-                    aria-invalid={Boolean(errors.validate)}
-                    onChange={(event) => setValidate(event.target.value)}
+                    {...bindField("validate", setValidate)}
                   />
                 </div>
                 <button
                   type="button"
                   onClick={refresh}
                   title="点击刷新验证码"
-                  className="bg-muted hover:border-primary/60 relative h-11 w-44 shrink-0 overflow-hidden rounded-md border transition-colors"
+                  aria-label="看不清？点击刷新验证码"
+                  className="bg-muted hover:border-primary/60 relative h-11 w-36 shrink-0 overflow-hidden rounded-md border transition-colors sm:w-44"
                 >
                   {captchaLoading ? (
                     <span className="text-muted-foreground flex h-full items-center justify-center">
@@ -253,7 +309,8 @@ export function LoginView() {
             </div>
 
             <Button type="submit" className="h-11 w-full text-base" disabled={submitting}>
-              {submitting ? <Loader2Icon className="size-4 animate-spin" /> : null}登 录
+              {submitting ? <Loader2Icon className="size-4 animate-spin" /> : null}
+              {submitting ? "登录中…" : "登 录"}
             </Button>
           </form>
 
