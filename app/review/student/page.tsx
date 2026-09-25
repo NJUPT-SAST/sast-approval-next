@@ -1,23 +1,20 @@
 "use client"
 
-import { UserRoundIcon } from "lucide-react"
-import AccountManager from "@/components/manage/account-manager"
-import type { AccountManagerProps } from "@/components/manage/account-manager"
+import { AccountImportView } from "@/components/manage/account-import-view"
 import { importAccountsFromExcel } from "@/lib/api/judge"
 
+/**
+ * 审批人员的学生管理。
+ * 目前后端只给这个角色开放了 Excel 批量导入，查看 / 修改已有账号的接口只有管理员能用，
+ * 所以这里只做导入，不展示一个点了「成功」却什么都没发生的增删改界面。
+ */
 export default function ReviewStudentPage() {
-  const managerProps: AccountManagerProps = {
-    title: "学生管理",
-    description: "审批人员管理学生账号，直接在网页上新增、编辑、删除，也可导入 Excel。",
-    entity: "学生",
-    emptyIcon: UserRoundIcon,
-    listAccounts: (pageNum, pageSize) =>
-      Promise.resolve({ data: { success: true, data: { records: [], total: 0 } } }),
-    createAccount: async () => Promise.resolve({ data: { success: true } }),
-    editAccount: async () => Promise.resolve({ data: { success: true } }),
-    deleteAccount: async () => Promise.resolve({ data: { success: true } }),
-    importAccount: importAccountsFromExcel,
-  }
-
-  return <AccountManager {...managerProps} />
+  return (
+    <AccountImportView
+      title="学生管理"
+      description="从 Excel 批量导入学生账号，导入完成后自动导出账号与初始密码。查看或修改已有账号请联系系统管理员。"
+      entity="学生"
+      importAccount={importAccountsFromExcel}
+    />
+  )
 }

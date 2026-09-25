@@ -12,14 +12,6 @@ import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
   Table,
   TableBody,
   TableCell,
@@ -27,10 +19,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { PageContainer, PageHeader } from "@/components/common/page-header"
+import { Section, SectionList } from "@/components/common/section"
 import { TableSurface } from "@/components/common/data-list"
+import { EmptyState } from "@/components/common/states"
 import { FileDropzone } from "@/components/common/file-dropzone"
 import { ImportCheckAlerts } from "@/components/common/import-check-alerts"
-import { importAccountsFromExcel } from "@/lib/api/judge"
 import { notifyRequestError } from "@/lib/api/errors"
 import {
   ACCOUNT_FILE_TYPES,
@@ -42,33 +36,49 @@ import {
 import {
   MAX_IMPORT_ROWS,
   REQUIRED_COLUMNS,
-  checkAccountWorkbook,
   type ImportCheckResult,
+  checkAccountWorkbook,
 } from "@/lib/import-accounts"
 
+type ImportResult = {
+  data: { success: boolean; data?: AccountRow[] | null; errMsg?: string | null }
+}
+
 /**
- * 导入评委账号弹窗：上传 Excel → 本地校验 → 导入 → 导出初始密码。
- *
- * 后端只在导入成功时返回一次初始密码，所以导入完成后不自动关闭弹窗：
- * 密码留在这里，可以反复导出，直到管理员自己确认保存完毕。
+ * 整页形式的账号批量导入：上传 → 本地逐行校验 → 导入 → 展示并导出初始密码。
+ * 「一键导入」与审批人员的「学生管理」共用。
  */
-export function JudgeImportDialog({
-  open,
-  onOpenChange,
-  onImported,
+export function AccountImportView({
+  title,
+  description,
+  entity,
+  importAccount,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onImported: () => void
+  title: string
+  description: string
+  /** 账号类型，如「评委」「学生」 */
+  entity: string
+  importAccount: (file: File) => Promise<ImportResult>
 }) {
   const [fileList, setFileList] = React.useState<File[]>([])
   const [uploading, setUploading] = React.useState(false)
   const [checking, setChecking] = React.useState(false)
   const [check, setCheck] = React.useState<ImportCheckResult | null>(null)
-  const [created, setCreated] = React.useState<AccountRow[] | null>(null)
+  const [data, setData] = React.useState<AccountRow[]>([])
 
   const blocked = check === null || check.issues.length > 0 || check.rows.length === 0
 
+  // 初始密码只返回一次：有未离开的导入结果时，关闭或刷新页面前让浏览器确认一次
+  React.useEffect(() => {
+    if (data.length === 0) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+    }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [data.length])
+
+  /** 选完文件立刻在本地解析并逐行校验，不合格就不让提交 */
   const handleFileChange = async (files: File[]) => {
     setFileList(files)
     setCheck(null)
@@ -79,7 +89,7 @@ export function JudgeImportDialog({
       setCheck(result)
       if (result.issues.length > 0) {
         toast.error(`表格有 ${result.issues.length} 处问题`, {
-          description: "请按提示修改后重新上传",
+          description: "请按下方提示修改后重新上传",
         })
       } else {
         toast.success(`校验通过，共 ${result.rows.length} 条记录`)
@@ -105,19 +115,25 @@ export function JudgeImportDialog({
       toast.error("表格还在校验中，请稍候")
       return
     }
-    if (check.issues.length > 0 || check.rows.length === 0) {
-      toast.error("表格校验未通过，请修正后重新上传")
+    if (check.issues.length > 0) {
+      toast.error(`表格还有 ${check.issues.length} 处问题未修正`, {
+        description: "修好后重新上传即可导入",
+      })
+      return
+    }
+    if (check.rows.length === 0) {
+      toast.error("表格里没有可导入的数据")
       return
     }
     setUploading(true)
     try {
-      const res = await importAccountsFromExcel(fileList[0])
+      const res = await importAccount(fileList[0])
       if (res.data?.success === true) {
         const rows: AccountRow[] = res.data.data ?? []
-        // 先把密码留在弹窗里，再尝试自动下载：即使下载被浏览器拦截也不会丢
-        setCreated(rows)
-        onImported()
+        setData(rows)
         void downloadAccountPasswords(rows)
+        setFileList([])
+        setCheck(null)
         toast.success("😸 导入成功", { description: `共生成 ${rows.length} 个账号` })
       } else {
         toast.error("😭 导入失败", { description: res.data?.errMsg ?? "后端没有返回具体原因" })
@@ -130,18 +146,23 @@ export function JudgeImportDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>导入评委</DialogTitle>
-          <DialogDescription>
-            {created === null
-              ? `从 Excel 批量创建评委账号，第一行需为「${REQUIRED_COLUMNS.join("」「")}」，单次最多 ${MAX_IMPORT_ROWS} 条。`
-              : "以下是本次生成的账号与初始密码，关闭弹窗后将无法再次查看。"}
-          </DialogDescription>
-        </DialogHeader>
+    <PageContainer size="narrow">
+      <PageHeader
+        title={title}
+        description={description}
+        actions={
+          <Button variant="outline" onClick={() => void downloadAccountTemplate()}>
+            <FileDownIcon className="size-4" />
+            下载模板
+          </Button>
+        }
+      />
 
-        {created === null ? (
+      <SectionList className="mt-8">
+        <Section
+          title="1. 上传账号表格"
+          description={`表格第一行需为「${REQUIRED_COLUMNS.join("」「")}」，单次最多 ${MAX_IMPORT_ROWS} 条，可先下载模板后填写。`}
+        >
           <div className="space-y-4">
             <FileDropzone
               value={fileList}
@@ -161,43 +182,58 @@ export function JudgeImportDialog({
               </p>
             ) : null}
 
-            <ImportCheckAlerts check={check} listClassName="max-h-48" />
+            <ImportCheckAlerts check={check} />
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void downloadAccountTemplate()}
-              >
-                <FileDownIcon className="size-4" />
-                下载模板
-              </Button>
-              <Button
-                type="button"
-                onClick={handleUpload}
-                disabled={uploading || checking || fileList.length === 0 || blocked}
-              >
-                {uploading ? (
-                  <Loader2Icon className="size-4 animate-spin" />
-                ) : (
-                  <UploadIcon className="size-4" />
-                )}
-                开始导入
-              </Button>
-            </DialogFooter>
+            <Button
+              onClick={handleUpload}
+              disabled={uploading || checking || fileList.length === 0 || blocked}
+              className="w-full sm:w-auto"
+            >
+              {uploading ? (
+                <Loader2Icon className="size-4 animate-spin" />
+              ) : (
+                <UploadIcon className="size-4" />
+              )}
+              开始导入
+            </Button>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <Alert variant="destructive">
-              <TriangleAlertIcon />
-              <AlertTitle>请及时保存账号数据</AlertTitle>
-              <AlertDescription>
-                初始密码只在这次导入时返回一次，关闭弹窗后无法再取回，请确认密码表格已经下载并妥善保管。
-              </AlertDescription>
-            </Alert>
+        </Section>
 
-            <TableSurface>
-              <div className="max-h-64 overflow-y-auto">
+        <Section
+          title="2. 生成的账号"
+          description={`导入成功后会自动下载${entity}账号的密码表，也可以在这里重新导出。`}
+          actions={
+            data.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void downloadAccountPasswords(data)}
+              >
+                <DownloadIcon className="size-4" />
+                导出 Excel
+              </Button>
+            ) : null
+          }
+        >
+          <div className="space-y-4">
+            {data.length > 0 ? (
+              <Alert variant="destructive" className="motion-safe:animate-fade-enter">
+                <TriangleAlertIcon />
+                <AlertTitle>请及时保存账号数据</AlertTitle>
+                <AlertDescription>
+                  初始密码只返回这一次，离开页面后无法再次导出，请务必妥善保管密码表格。
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {data.length === 0 ? (
+              <EmptyState
+                title="还没有导入记录"
+                description="上传表格并导入后，生成的账号会显示在这里。"
+                className="min-h-40 rounded-xl border border-dashed"
+              />
+            ) : (
+              <TableSurface className="motion-safe:animate-fade-enter">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
@@ -206,7 +242,7 @@ export function JudgeImportDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {created.map((row, index) => (
+                    {data.map((row, index) => (
                       <TableRow key={`${row.code}-${index}`}>
                         <TableCell className="font-mono">{row.code}</TableCell>
                         <TableCell className="font-mono">{row.password}</TableCell>
@@ -214,25 +250,11 @@ export function JudgeImportDialog({
                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            </TableSurface>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void downloadAccountPasswords(created)}
-              >
-                <DownloadIcon className="size-4" />
-                重新导出
-              </Button>
-              <Button type="button" onClick={() => onOpenChange(false)}>
-                我已保存，关闭
-              </Button>
-            </DialogFooter>
+              </TableSurface>
+            )}
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+        </Section>
+      </SectionList>
+    </PageContainer>
   )
 }

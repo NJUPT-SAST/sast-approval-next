@@ -1,16 +1,12 @@
 "use client"
 
 import * as React from "react"
-import * as XLSX from "xlsx"
 import {
-  CircleCheckIcon,
-  FileDownIcon,
   Loader2Icon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
-  TriangleAlertIcon,
   UploadIcon,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -42,7 +38,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -55,18 +50,12 @@ import {
 import { PageContainer, PageHeader } from "@/components/common/page-header"
 import { DataPagination } from "@/components/common/data-pagination"
 import { IndexBadge, MobileList, MobileListItem, TableSurface } from "@/components/common/data-list"
-import { FileDropzone } from "@/components/common/file-dropzone"
-import { EmptyState } from "@/components/common/states"
+import { EmptyState, ErrorState } from "@/components/common/states"
+import { AccountImportDialog } from "@/components/manage/account-import-dialog"
 import { useLoadState } from "@/lib/hooks/use-load-state"
-import { saveBlob } from "@/lib/file"
-import {
-  MAX_IMPORT_ROWS,
-  REQUIRED_COLUMNS,
-  checkAccountWorkbook,
-  formatIssue,
-  type ImportCheckResult,
-} from "@/lib/import-accounts"
-import { isPhone, isStudentCode, PHONE_MESSAGE, STUDENT_CODE_MESSAGE } from "@/lib/validation"
+import { readPositiveInt, useQueryParams } from "@/lib/hooks/use-query-params"
+import type { AccountRow } from "@/lib/excel-accounts"
+import { validateJudgeForm } from "@/lib/validation"
 
 export type AccountRecord = {
   code: string
@@ -74,16 +63,11 @@ export type AccountRecord = {
   contact: string
 }
 
-export type AccountRow = {
-  code: string
-  password: string
-}
-
 type ApiResult<T = unknown> = {
   data: {
     success: boolean
     data?: T
-    errMsg?: string
+    errMsg?: string | null
   }
 }
 
@@ -130,22 +114,23 @@ function AccountFormDialog({
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [submitting, setSubmitting] = React.useState(false)
 
-  const setField = (key: keyof typeof values) => (event: React.ChangeEvent<HTMLInputElement>) =>
+  const setField = (key: keyof typeof values) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setValues((prev) => ({ ...prev, [key]: event.target.value }))
+    // 改动过的字段先收起错误提示，提交时再统一校验
+    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: "" }))
+  }
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const nextErrors: Record<string, string> = {}
-    if (!values.code.trim()) nextErrors.code = "请输入学号"
-    else if (!isStudentCode(values.code)) nextErrors.code = STUDENT_CODE_MESSAGE
-    if (!values.name.trim()) nextErrors.name = "请输入姓名"
-    if (!values.contact.trim()) nextErrors.contact = "请输入联系方式"
-    else if (!isPhone(values.contact)) nextErrors.contact = PHONE_MESSAGE
-    if (!isEdit && values.password.length < 6) nextErrors.password = "密码至少 6 位"
-    if (isEdit && values.password && values.password.length < 6)
-      nextErrors.password = "密码至少 6 位"
+    const nextErrors = validateJudgeForm(values, isEdit)
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
+    if (Object.keys(nextErrors).length > 0) {
+      const first = (["code", "name", "contact", "password"] as const).find(
+        (key) => nextErrors[key]
+      )
+      document.getElementById(`form-${entity}-${first}`)?.focus()
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -163,14 +148,16 @@ function AccountFormDialog({
             password: values.password,
           })
       if (res.data.success) {
-        toast.success(`😸 已${isEdit ? "更新" : "新增"}`)
+        toast.success(`😸 已${isEdit ? "更新" : "新增"}${entity}`, {
+          description: `${values.name.trim()}（${values.code.trim()}）`,
+        })
         onSaved()
         onOpenChange(false)
       } else {
         toast.error("😭 保存失败", { description: res.data.errMsg ?? "请检查填写信息后重试" })
       }
-    } catch {
-      toast.error("😭 保存失败", { description: "网络异常，请稍后重试" })
+    } catch (error) {
+      notifyRequestError(error, "😭 保存失败", { description: "请稍后重试" })
     } finally {
       setSubmitting(false)
     }
@@ -183,8 +170,8 @@ function AccountFormDialog({
           <DialogTitle>{isEdit ? `编辑${entity}` : `新增${entity}`}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? `修改姓名与联系方式，学号不可改，密码留空则不重置。`
-              : `直接录入单个${entity}账号，无需导入 Excel。`}
+              ? "修改姓名与联系方式，学号不可改，密码留空则不重置。"
+              : `直接录入单个${entity}账号，批量添加请用「导入${entity}」。`}
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit} noValidate>
@@ -195,6 +182,7 @@ function AccountFormDialog({
               value={values.code}
               disabled={isEdit}
               placeholder="如 B21021021"
+              autoFocus={!isEdit}
               aria-invalid={Boolean(errors.code)}
               onChange={setField("code")}
             />
@@ -284,197 +272,7 @@ function RowMenu({
   )
 }
 
-/** 生成账号导入模板 */
-function generateExcelFile(entity: string) {
-  const workbook = XLSX.utils.book_new()
-  const worksheet = XLSX.utils.aoa_to_sheet([
-    [REQUIRED_COLUMNS[0], REQUIRED_COLUMNS[1], REQUIRED_COLUMNS[2]],
-  ])
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1")
-  const wbout = XLSX.write(workbook, { type: "array", bookType: "xlsx" })
-  saveBlob(new Blob([wbout], { type: "application/octet-stream" }), `${entity}导入模板.xlsx`)
-}
-
-/** 把返回的账号密码导出为 Excel */
-function downloadExcelFile(data: AccountRow[], entity: string) {
-  if (!data || data.length === 0) {
-    toast.error("没有可导出的数据")
-    return
-  }
-  const workbook = XLSX.utils.book_new()
-  const worksheet = XLSX.utils.aoa_to_sheet([[entity, "密码"]])
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1")
-  data.forEach((row, index) => {
-    XLSX.utils.sheet_add_aoa(worksheet, [[row.code, row.password]], {
-      origin: `A${index + 2}`,
-    })
-  })
-  const excelBuffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" })
-  saveBlob(new Blob([excelBuffer], { type: "application/octet-stream" }), `${entity}账号密码.xlsx`)
-}
-
-/** 共用的账号导入弹窗 */
-function AccountImportDialog({
-  entity,
-  open,
-  onOpenChange,
-  onImported,
-  importAccount,
-}: {
-  entity: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onImported: () => void
-  importAccount: (file: File) => Promise<unknown>
-}) {
-  const [fileList, setFileList] = React.useState<File[]>([])
-  const [uploading, setUploading] = React.useState(false)
-  const [checking, setChecking] = React.useState(false)
-  const [check, setCheck] = React.useState<ImportCheckResult | null>(null)
-
-  const blocked = check === null || check.issues.length > 0 || check.rows.length === 0
-
-  const handleFileChange = async (files: File[]) => {
-    setFileList(files)
-    setCheck(null)
-    if (files.length === 0) return
-    setChecking(true)
-    try {
-      const result = checkAccountWorkbook(await files[0].arrayBuffer())
-      setCheck(result)
-      if (result.issues.length > 0) {
-        toast.error(`表格有 ${result.issues.length} 处问题`, {
-          description: "请按提示修改后重新上传",
-        })
-      } else {
-        toast.success(`校验通过，共 ${result.rows.length} 条记录`)
-      }
-    } catch {
-      setCheck({
-        rows: [],
-        issues: [{ message: "文件读取失败，请确认文件没有损坏后重试" }],
-        blankRows: 0,
-        total: 0,
-      })
-    } finally {
-      setChecking(false)
-    }
-  }
-
-  const handleUpload = async () => {
-    if (fileList.length === 0) {
-      toast.error("请先选择要导入的 Excel 文件")
-      return
-    }
-    if (check === null) {
-      toast.error("表格还在校验中，请稍候")
-      return
-    }
-    if (check.issues.length > 0 || check.rows.length === 0) {
-      toast.error("表格校验未通过，请修正后重新上传")
-      return
-    }
-    setUploading(true)
-    try {
-      const res = await importAccount(fileList[0])
-      const result = res as ApiResult<AccountRow[]>
-      if (result.data?.success === true) {
-        const rows: AccountRow[] = result.data.data ?? []
-        downloadExcelFile(rows, entity)
-        toast.success("😸 导入成功", { description: `共生成 ${rows.length} 个账号` })
-        onImported()
-        onOpenChange(false)
-      } else {
-        toast.error("😭 导入失败", { description: result.data?.errMsg ?? "后端没有返回具体原因" })
-      }
-    } catch (error) {
-      notifyRequestError(error, "😭 导入失败", { description: "请稍后重试" })
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>导入{entity}</DialogTitle>
-          <DialogDescription>
-            从 Excel 批量创建{entity}账号，第一行需为「{REQUIRED_COLUMNS.join("」「")}」，单次最多{" "}
-            {MAX_IMPORT_ROWS} 条。
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <FileDropzone
-            value={fileList}
-            onChange={handleFileChange}
-            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-            maxSize={5 * 1024 * 1024}
-            maxCount={1}
-            title="点击或拖拽上传账号表格"
-            hint="仅支持 xlsx、xls 格式的单个文件，选完会先在本地校验"
-            disabled={uploading || checking}
-          />
-
-          {checking ? (
-            <p className="text-muted-foreground flex items-center gap-2 text-sm">
-              <Loader2Icon className="size-4 animate-spin" />
-              正在校验表格内容…
-            </p>
-          ) : null}
-
-          {check !== null && check.issues.length === 0 ? (
-            <Alert>
-              <CircleCheckIcon />
-              <AlertTitle>校验通过，可以导入</AlertTitle>
-              <AlertDescription>
-                共 {check.rows.length} 条记录
-                {check.blankRows > 0 ? `，已跳过 ${check.blankRows} 行空白` : ""}。
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          {check !== null && check.issues.length > 0 ? (
-            <Alert variant="destructive">
-              <TriangleAlertIcon />
-              <AlertTitle>表格有 {check.issues.length} 处问题，修正后重新上传</AlertTitle>
-              <AlertDescription>
-                <ul className="max-h-48 list-disc space-y-1 overflow-y-auto pl-4">
-                  {check.issues.slice(0, 50).map((issue, index) => (
-                    <li key={`${issue.row ?? "file"}-${issue.column ?? ""}-${index}`}>
-                      {formatIssue(issue)}
-                    </li>
-                  ))}
-                </ul>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => generateExcelFile(entity)}>
-              <FileDownIcon className="size-4" />
-              下载模板
-            </Button>
-            <Button
-              type="button"
-              onClick={handleUpload}
-              disabled={uploading || checking || fileList.length === 0 || blocked}
-            >
-              {uploading ? (
-                <Loader2Icon className="size-4 animate-spin" />
-              ) : (
-                <UploadIcon className="size-4" />
-              )}
-              开始导入
-            </Button>
-          </DialogFooter>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-/** 共用的账号管理主组件 */
+/** 共用的账号管理主组件（评委管理、学生管理），使用的页面需包在 <Suspense> 里 */
 export default function AccountManager({
   title,
   description,
@@ -486,14 +284,23 @@ export default function AccountManager({
   deleteAccount,
   importAccount,
 }: AccountManagerProps) {
-  const [pageState, setPageState] = React.useState({ pageNumber: 1, pageSize: 10, total: 0 })
+  // 页码放在地址栏，刷新或返回时不丢
+  const { params, setParams } = useQueryParams()
+  const pageNumber = readPositiveInt(params, "page", 1)
+  const pageSize = 10
+  const [total, setTotal] = React.useState(0)
   const [records, setRecords] = React.useState<AccountRecord[]>([])
+  const [failed, setFailed] = React.useState(false)
   const [dialog, setDialog] = React.useState<{
     open: boolean
     editing: AccountRecord | null
     nonce: number
   }>({ open: false, editing: null, nonce: 0 })
-  const [deleteTarget, setDeleteTarget] = React.useState<AccountRecord | null>(null)
+  // 删除确认框：target 在关闭动画期间保留，避免文案闪成空白
+  const [deleteDialog, setDeleteDialog] = React.useState<{
+    open: boolean
+    target: AccountRecord | null
+  }>({ open: false, target: null })
   const [deleting, setDeleting] = React.useState(false)
   const [importDialog, setImportDialog] = React.useState({ open: false, nonce: 0 })
 
@@ -502,23 +309,36 @@ export default function AccountManager({
     loading: isLoading,
     markLoaded,
     reload,
-  } = useLoadState(`${pageState.pageNumber}|${pageState.pageSize}`)
+  } = useLoadState(`${pageNumber}|${pageSize}`)
+
+  const goToPage = React.useCallback(
+    (page: number) => setParams({ page: page > 1 ? page : undefined }),
+    [setParams]
+  )
 
   React.useEffect(() => {
     let cancelled = false
-    listAccounts(pageState.pageNumber, pageState.pageSize)
+    listAccounts(pageNumber, pageSize)
       .then((res) => {
         if (cancelled) return
-        setRecords(res.data.data?.records ?? [])
-        setPageState((prev) => ({ ...prev, total: res.data.data?.total ?? 0 }))
+        const nextRecords = res.data.data?.records ?? []
+        const nextTotal = res.data.data?.total ?? 0
+        // 删掉某页最后一条后，这一页就空了，自动退回上一页
+        if (nextRecords.length === 0 && pageNumber > 1 && nextTotal > 0) {
+          goToPage(Math.ceil(nextTotal / pageSize))
+          return
+        }
+        setFailed(false)
+        setRecords(nextRecords)
+        setTotal(nextTotal)
       })
       .catch((error) => {
-        if (!cancelled) {
-          setRecords([])
-          notifyRequestError(error, "😭 请求失败", {
-            description: `${entity}列表加载失败，请稍后重试`,
-          })
-        }
+        if (cancelled) return
+        setFailed(true)
+        setRecords([])
+        notifyRequestError(error, "😭 请求失败", {
+          description: `${entity}列表加载失败，请稍后重试`,
+        })
       })
       .finally(() => {
         if (!cancelled) markLoaded(requestKey)
@@ -534,39 +354,29 @@ export default function AccountManager({
   const openEdit = (account: AccountRecord) =>
     setDialog((prev) => ({ open: true, editing: account, nonce: prev.nonce + 1 }))
   const openImport = () => setImportDialog((prev) => ({ open: true, nonce: prev.nonce + 1 }))
+  const openDelete = (account: AccountRecord) => setDeleteDialog({ open: true, target: account })
 
   const submitDelete = async () => {
-    if (!deleteTarget) return
+    const target = deleteDialog.target
+    if (!target) return
     setDeleting(true)
     try {
-      const res = await deleteAccount(deleteTarget.code)
+      const res = await deleteAccount(target.code)
       if (res.data.success) {
-        toast.success("😸 已删除", { description: `${deleteTarget.name} 的账号已删除` })
-        setDeleteTarget(null)
+        toast.success("😸 已删除", { description: `${target.name} 的账号已删除` })
+        setDeleteDialog((prev) => ({ ...prev, open: false }))
         reload()
       } else {
         toast.error("😭 删除失败", { description: res.data.errMsg ?? "请稍后重试" })
       }
-    } catch {
-      toast.error("😭 删除失败", { description: "网络异常，请稍后重试" })
+    } catch (error) {
+      notifyRequestError(error, "😭 删除失败", { description: "请稍后重试" })
     } finally {
       setDeleting(false)
     }
   }
 
-  const empty = (
-    <EmptyState
-      icon={emptyIcon}
-      title={`暂无${entity}账号`}
-      description={`现在还没有${entity}账号，点右上角「新增${entity}」直接录入一个吧！`}
-      action={
-        <Button onClick={openCreate}>
-          <PlusIcon className="size-4" />
-          新增{entity}
-        </Button>
-      }
-    />
-  )
+  const rowNumber = (index: number) => (pageNumber - 1) * pageSize + index + 1
 
   return (
     <PageContainer size="wide">
@@ -594,12 +404,33 @@ export default function AccountManager({
               <Skeleton key={index} className="h-14 w-full rounded-lg" />
             ))}
           </div>
+        ) : failed ? (
+          <ErrorState
+            description={`${entity}列表没有加载出来，请检查网络后重试。`}
+            onRetry={reload}
+          />
         ) : records.length === 0 ? (
-          empty
+          <EmptyState
+            icon={emptyIcon}
+            title={`暂无${entity}账号`}
+            description={`还没有${entity}账号，可以逐个新增，也可以从 Excel 批量导入。`}
+            action={
+              <>
+                <Button variant="outline" onClick={openImport}>
+                  <UploadIcon className="size-4" />
+                  导入{entity}
+                </Button>
+                <Button onClick={openCreate}>
+                  <PlusIcon className="size-4" />
+                  新增{entity}
+                </Button>
+              </>
+            }
+          />
         ) : (
           <>
             {/* 桌面表格 */}
-            <TableSurface className="hidden md:block">
+            <TableSurface className="motion-safe:animate-fade-enter hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -611,18 +442,16 @@ export default function AccountManager({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {records.map((item) => (
+                  {records.map((item, index) => (
                     <TableRow key={item.code}>
                       <TableCell className="text-muted-foreground font-mono text-xs">
-                        {(pageState.pageNumber - 1) * pageState.pageSize +
-                          records.indexOf(item) +
-                          1}
+                        {rowNumber(index)}
                       </TableCell>
                       <TableCell className="font-mono text-sm">{item.code}</TableCell>
                       <TableCell>{item.name}</TableCell>
                       <TableCell className="font-mono text-sm">{item.contact || "—"}</TableCell>
                       <TableCell className="text-right">
-                        <RowMenu account={item} onEdit={openEdit} onDelete={setDeleteTarget} />
+                        <RowMenu account={item} onEdit={openEdit} onDelete={openDelete} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -631,15 +460,11 @@ export default function AccountManager({
             </TableSurface>
 
             {/* 手机列表 */}
-            <MobileList className="md:hidden">
+            <MobileList className="motion-safe:animate-fade-enter md:hidden">
               {records.map((item, index) => (
                 <MobileListItem
                   key={item.code}
-                  leading={
-                    <IndexBadge>
-                      {(pageState.pageNumber - 1) * pageState.pageSize + index + 1}
-                    </IndexBadge>
-                  }
+                  leading={<IndexBadge>{rowNumber(index)}</IndexBadge>}
                   title={
                     <span className="flex items-center gap-2">
                       {item.name}
@@ -647,7 +472,7 @@ export default function AccountManager({
                     </span>
                   }
                   meta={<span className="font-mono">{item.contact || "—"}</span>}
-                  trailing={<RowMenu account={item} onEdit={openEdit} onDelete={setDeleteTarget} />}
+                  menu={<RowMenu account={item} onEdit={openEdit} onDelete={openDelete} />}
                 />
               ))}
             </MobileList>
@@ -655,16 +480,18 @@ export default function AccountManager({
         )}
       </div>
 
-      <DataPagination
-        className="mt-6"
-        current={pageState.pageNumber}
-        pageSize={pageState.pageSize}
-        total={pageState.total}
-        onChange={(page) => setPageState((prev) => ({ ...prev, pageNumber: page }))}
-      />
+      {!failed ? (
+        <DataPagination
+          className="mt-6"
+          current={pageNumber}
+          pageSize={pageSize}
+          total={total}
+          onChange={(page) => goToPage(page)}
+        />
+      ) : null}
 
       <AccountFormDialog
-        key={dialog.nonce}
+        key={`form-${dialog.nonce}`}
         entity={entity}
         open={dialog.open}
         editing={dialog.editing}
@@ -675,7 +502,7 @@ export default function AccountManager({
       />
 
       <AccountImportDialog
-        key={importDialog.nonce}
+        key={`import-${importDialog.nonce}`}
         entity={entity}
         open={importDialog.open}
         onOpenChange={(open) => setImportDialog((prev) => ({ ...prev, open }))}
@@ -684,25 +511,30 @@ export default function AccountManager({
       />
 
       <AlertDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        open={deleteDialog.open}
+        onOpenChange={(open) => !deleting && setDeleteDialog((prev) => ({ ...prev, open }))}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除该{entity}？</AlertDialogTitle>
             <AlertDialogDescription>
-              删除「{deleteTarget?.name}（{deleteTarget?.code}
+              删除「{deleteDialog.target?.name}（{deleteDialog.target?.code}
               ）」后，该账号将无法登录系统，请谨慎操作。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={submitDelete}
+              onClick={(event) => {
+                // 默认点击就会关闭弹窗，这里等请求结束再关，失败时还能重试
+                event.preventDefault()
+                void submitDelete()
+              }}
               disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
-              {deleting ? <Loader2Icon className="size-4 animate-spin" /> : null}确认删除
+              {deleting ? <Loader2Icon className="size-4 animate-spin" /> : null}
+              {deleting ? "正在删除…" : "确认删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
