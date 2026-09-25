@@ -76,16 +76,13 @@ export default function InboxPage() {
     [setInboxPoint]
   )
 
-  const update = React.useCallback(
-    (updater: (prev: MessageState[]) => MessageState[]) => {
-      setStates((prev) => {
-        const next = updater(prev)
-        persist(next)
-        return next
-      })
-    },
-    [persist]
-  )
+  // 持久化放在 updater 外面：updater 可能在渲染阶段执行，
+  // 在里面改 zustand 会触发「渲染时更新其它组件」的警告
+  const update = (updater: (prev: MessageState[]) => MessageState[]) => {
+    const next = updater(states)
+    setStates(next)
+    persist(next)
+  }
 
   const setAll = (patch: Partial<MessageState>) =>
     update((prev) => prev.map((item) => ({ ...item, ...patch })))
@@ -164,7 +161,7 @@ export default function InboxPage() {
                 <CollapsibleTrigger className="hover:bg-muted/40 -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-3 rounded-lg px-3 py-4 text-left transition-colors">
                   <span
                     className={cn(
-                      "mt-2 size-2 shrink-0 rounded-full",
+                      "mt-2 size-2 shrink-0 rounded-full transition-colors duration-300",
                       state.read ? "bg-transparent" : "bg-primary"
                     )}
                     aria-label={state.read ? "已读" : "未读"}
@@ -195,7 +192,7 @@ export default function InboxPage() {
                   />
                 </CollapsibleTrigger>
 
-                <CollapsibleContent>
+                <CollapsibleContent className="motion-safe:data-[state=closed]:animate-collapsible-up motion-safe:data-[state=open]:animate-collapsible-down overflow-hidden">
                   <div className="space-y-4 pt-1 pb-5 ps-5">
                     <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
                       {message.content}

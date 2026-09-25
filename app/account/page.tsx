@@ -15,10 +15,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PageContainer } from "@/components/common/page-header"
+import { MobileList, MobileListItem } from "@/components/common/data-list"
 import { Section, SectionList } from "@/components/common/section"
+import { NAV_ICONS } from "@/components/layout/nav-icons"
 import { getUserProfile } from "@/lib/api/user"
 import { useLogout } from "@/lib/hooks/use-logout"
-import { ROLE_LABEL, useUserStore } from "@/lib/store/user"
+import { NAV_BY_ROLE, navItemHint } from "@/lib/navigation"
+import { ROLE_LABEL, useUserStore, type UserRole } from "@/lib/store/user"
 
 type InfoItem = {
   key: string
@@ -74,8 +77,13 @@ export default function AccountPage() {
   const profile = useUserStore((state) => state.profile)
   const setProfile = useUserStore((state) => state.setProfile)
   const role = useUserStore((state) => state.role)
+  const inboxPoint = useUserStore((state) => state.inboxPoint)
   const logout = useLogout()
   const [loading, setLoading] = React.useState(true)
+  const shortcuts =
+    role === "offline"
+      ? []
+      : NAV_BY_ROLE[role as Exclude<UserRole, "offline">].filter((item) => item.href !== "/account")
 
   // 静默刷新一次用户信息，保证展示的是最新数据
   React.useEffect(() => {
@@ -154,6 +162,38 @@ export default function AccountPage() {
       </section>
 
       <SectionList className="mt-6 sm:mt-10">
+        {shortcuts.length > 0 ? (
+          <Section title="常用入口" description="从这里直接开始今天的工作。" layout="split">
+            <MobileList>
+              {shortcuts.map((item) => {
+                const Icon = NAV_ICONS[item.icon] ?? UserRoundIcon
+                const unread = item.badge === "inbox" && inboxPoint === "on"
+                return (
+                  <MobileListItem
+                    key={item.href}
+                    href={item.href}
+                    leading={
+                      <span className="bg-primary/10 text-primary flex size-9 items-center justify-center rounded-lg">
+                        <Icon className="size-4" />
+                      </span>
+                    }
+                    title={item.label}
+                    meta={navItemHint(role, item.href)}
+                    trailing={
+                      unread ? (
+                        <Badge variant="destructive" className="h-5 px-1.5 text-[11px]">
+                          未读
+                        </Badge>
+                      ) : null
+                    }
+                    className="hover:bg-muted/40 transition-colors"
+                  />
+                )
+              })}
+            </MobileList>
+          </Section>
+        ) : null}
+
         <Section
           title="个人信息"
           description="信息来源于统一身份认证，如有误请联系管理员。"

@@ -2,20 +2,26 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Loader2Icon, SendIcon } from "lucide-react"
+import { CalendarClockIcon, CircleAlertIcon, Loader2Icon, SendIcon } from "lucide-react"
 import { toast } from "sonner"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { PageContainer, PageHeader, MobileActionBar } from "@/components/common/page-header"
-import { EmptyState, LoadingState, ResultState } from "@/components/common/states"
+import { EmptyState, ErrorState, LoadingState, ResultState } from "@/components/common/states"
 import { SchemaForm, useSchemaForm } from "@/components/schema-form"
 import { buildRegisterSchema } from "@/lib/constants/register-schema"
+import { notifyRequestError } from "@/lib/api/errors"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { getCompetitionInfo, getCompetitionSignInfo, getTeamInfo, signUp } from "@/lib/api/user"
 import { withQuery } from "@/lib/navigation"
 import { STORAGE_KEYS, readStorage } from "@/lib/storage"
 import { useUiStore } from "@/lib/store/ui"
+import { isFuture, isPast } from "@/lib/datetime"
 
 type SignConfig = { minParti: number; maxParti: number; isTeam: boolean }
+
+/** 报名时间窗口：未开始 / 已截止时不允许提交 */
+type RegWindow = { state: "open" | "upcoming" | "closed"; begin: string; end: string }
 
 function RegisterContent() {
   const router = useRouter()
@@ -25,12 +31,19 @@ function RegisterContent() {
   const setPageLabel = useUiStore((state) => state.setPageLabel)
 
   const { requestKey, loading, markLoaded, reload } = useLoadState(String(id))
+  const [loadFailed, setLoadFailed] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
-  const [messageSent, setMessageSent] = React.useState(false)
-  const [messageStatus, setMessageStatus] = React.useState<"success" | "error">("success")
-  const [errCode, setErrCode] = React.useState(0)
-  const [errMsg, setErrMsg] = React.useState("")
+  const [submitted, setSubmitted] = React.useState(false)
+  // 提交失败留在表单页内提示，已填写的内容不丢
+  const [submitError, setSubmitError] = React.useState<string | null>(null)
+  const errorRef = React.useRef<HTMLDivElement>(null)
   const [competitionName, setCompetitionName] = React.useState("")
+  const [isEditing, setIsEditing] = React.useState(false)
+  const [regWindow, setRegWindow] = React.useState<RegWindow>({
+    state: "open",
+    begin: "",
+    end: "",
+  })
 
   const [config, setConfig] = React.useState<SignConfig>({
     minParti: 1,
@@ -67,12 +80,32 @@ function RegisterContent() {
     [form]
   )
 
-  /** 拉取报名配置 + 已保存的报名信息 */
-  const loadAll = React.useCallback(
-    async (key: string) => {
-      toast.loading("🤔 正在获取已保存信息，请稍候", { id: "loading" })
+  /** 拉取比赛时间、报名配置与已保存的报名信息 */
+  React.useEffect(() => {
+    if (!id) return
+    let cancelled = false
+
+    const run = async () => {
       try {
+        const detail = await getCompetitionInfo(id).catch(() => null)
+        if (cancelled) return
+        const detailData = detail?.data?.data
+        if (detailData) {
+          setCompetitionName(detailData.name)
+          setPageLabel(detailData.name)
+          setRegWindow({
+            state: isFuture(detailData.regBegin)
+              ? "upcoming"
+              : isPast(detailData.regEnd)
+                ? "closed"
+                : "open",
+            begin: detailData.regBegin ?? "",
+            end: detailData.regEnd ?? "",
+          })
+        }
+
         const signRes = await getCompetitionSignInfo(id)
+        if (cancelled) return
         const signData = signRes.data.data
         const isTeam = Boolean(signData?.isTeam)
         const nextConfig: SignConfig = isTeam
@@ -87,11 +120,13 @@ function RegisterContent() {
         fillLeader(isTeam)
 
         const teamRes = await getTeamInfo(id)
+        if (cancelled) return
         if (teamRes.data.errCode !== 2003 && teamRes.data.data) {
           const data = teamRes.data.data
           const teamMember = data.teamMember ?? []
           const teacherMember = data.teacherMember ?? []
 
+          setIsEditing(true)
           setCurParti(teamMember.length || nextConfig.minParti)
           setCurTeacher(teacherMember.length)
 
@@ -114,36 +149,20 @@ function RegisterContent() {
             })
           }
           fillLeader(isTeam)
-          toast.success("😸 信息加载成功", { id: "loading" })
-        } else if (teamRes.data.errMsg === "您还未报名该比赛") {
-          toast.info("💡 请填写比赛信息", { id: "loading" })
-        } else {
-          toast.error("🙀 信息加载错误，请联系管理员", { id: "loading" })
+        } else if (teamRes.data.errMsg !== "您还未报名该比赛") {
+          toast.error("🙀 已保存的报名信息加载失败", {
+            description: teamRes.data.errMsg ?? "可以直接重新填写，或稍后刷新重试",
+          })
         }
+        setLoadFailed(false)
       } catch {
-        toast.error("🙀 信息加载错误，请联系管理员", { id: "loading" })
+        if (!cancelled) setLoadFailed(true)
       } finally {
-        markLoaded(key)
+        if (!cancelled) markLoaded(requestKey)
       }
-    },
-    [id, form, fillLeader, markLoaded]
-  )
-
-  React.useEffect(() => {
-    if (!id) return
-    let cancelled = false
-
-    const run = async () => {
-      const detail = await getCompetitionInfo(id).catch(() => null)
-      if (cancelled) return
-      if (detail?.data?.data) {
-        setCompetitionName(detail.data.data.name)
-        setPageLabel(detail.data.data.name)
-      }
-      await loadAll(requestKey)
     }
-    run()
 
+    void run()
     return () => {
       cancelled = true
     }
@@ -159,16 +178,23 @@ function RegisterContent() {
     if (typeof teacherValue === "number") setCurTeacher(teacherValue)
   }
 
+  const showSubmitError = (message: string) => {
+    setSubmitError(message)
+    window.requestAnimationFrame(() =>
+      errorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" })
+    )
+  }
+
   const onFinish = async (formData: Record<string, unknown>, errors: { name: string }[]) => {
     if (errors.length > 0) {
       toast.error("🤔 表单还有未填写或格式有误的字段", {
-        description: "请检查标红的输入项后重新提交",
+        description: "已定位到第一个需要修改的地方",
       })
       return
     }
 
     setSubmitting(true)
-    toast.loading("🤔 信息提交中", { id: "loading" })
+    setSubmitError(null)
     try {
       const teamName = (formData.input_teamName as string) ?? null
       const listOfParti = (formData.listOfParti ?? {}) as Record<string, unknown>
@@ -189,21 +215,16 @@ function RegisterContent() {
       }
 
       const res = await signUp(id, teamName, teamMember, teacherMember)
-      setMessageSent(true)
       if (res.data.success === true) {
-        setMessageStatus("success")
-        toast.success("😸 信息提交成功", { id: "loading" })
+        setSubmitted(true)
+        window.scrollTo({ top: 0 })
       } else {
-        setMessageStatus("error")
-        setErrCode(res.data.errCode ?? 0)
-        setErrMsg(res.data.errMsg ?? "")
-        toast.error("🙀 信息好像有点问题哦，检查下吧", { id: "loading" })
+        const code = res.data.errCode ? `（错误代码 ${res.data.errCode}）` : ""
+        showSubmitError(`${res.data.errMsg || "报名信息有误，请检查后重新提交"}${code}`)
       }
-    } catch {
-      setMessageSent(true)
-      setMessageStatus("error")
-      setErrMsg("网络异常")
-      toast.error("🙀 提交失败，请稍后重试", { id: "loading" })
+    } catch (error) {
+      notifyRequestError(error, "🙀 提交失败，请稍后重试")
+      showSubmitError("网络异常，报名信息没有提交成功。已填写的内容仍然保留，可以直接重新提交。")
     } finally {
       setSubmitting(false)
     }
@@ -217,67 +238,54 @@ function RegisterContent() {
     )
   }
 
-  if (messageSent) {
+  if (submitted) {
     return (
       <PageContainer size="narrow">
-        {messageStatus === "success" ? (
-          <ResultState
-            status="success"
-            title="报名信息提交成功"
-            subTitle="你的报名信息已提交，祝你比赛顺利。"
-            className="min-h-[60vh]"
-            extra={
-              <>
-                <Button onClick={() => router.push(withQuery("/activity/register-detail", { id }))}>
-                  查看报名详情
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => router.push(withQuery("/activity/detail", { id }))}
-                >
-                  返回比赛详情
-                </Button>
-              </>
-            }
-          />
-        ) : (
-          <ResultState
-            status="error"
-            title="提交时发生错误"
-            subTitle={`错误代码：${errCode}，错误信息：${errMsg}。请检查后重试，或联系管理员。`}
-            className="min-h-[60vh]"
-            extra={
-              <>
-                <Button
-                  onClick={() => {
-                    setMessageSent(false)
-                    reload()
-                  }}
-                >
-                  重新尝试提交
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => router.push(withQuery("/activity/detail", { id }))}
-                >
-                  返回比赛详情
-                </Button>
-              </>
-            }
-          />
-        )}
+        <ResultState
+          status="success"
+          title={isEditing ? "报名信息已更新" : "报名成功"}
+          subTitle="记得在材料提交阶段上传你的项目材料，祝你比赛顺利。"
+          className="min-h-[60vh]"
+          extra={
+            <>
+              <Button onClick={() => router.push(withQuery("/activity/register-detail", { id }))}>
+                查看报名详情
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => router.push(withQuery("/activity/detail", { id }))}
+              >
+                返回比赛详情
+              </Button>
+            </>
+          }
+        />
       </PageContainer>
     )
   }
 
+  if (!loading && loadFailed) {
+    return (
+      <PageContainer size="narrow">
+        <ErrorState
+          className="min-h-[50vh]"
+          description="报名信息没有加载出来，请检查网络后重试。"
+          onRetry={reload}
+        />
+      </PageContainer>
+    )
+  }
+
+  const windowClosed = regWindow.state !== "open"
+
   const submitButton = (
-    <Button size="lg" onClick={form.submit} disabled={submitting || loading}>
+    <Button size="lg" onClick={form.submit} disabled={submitting || loading || windowClosed}>
       {submitting ? (
         <Loader2Icon className="size-4 animate-spin" />
       ) : (
         <SendIcon className="size-4" />
       )}
-      提交报名
+      {isEditing ? "保存报名信息" : "提交报名"}
     </Button>
   )
 
@@ -285,15 +293,27 @@ function RegisterContent() {
     <PageContainer size="narrow">
       <PageHeader
         eyebrow={competitionName || undefined}
-        title="比赛报名"
+        title={isEditing ? "修改报名信息" : "比赛报名"}
         description={
           <>
             {config.isTeam ? "填写队伍与成员信息完成报名。" : "确认个人信息完成报名。"}带{" "}
             <span className="text-destructive">*</span> 的为必填项；
-            {config.isTeam ? "队长" : "参赛者"}信息由系统自动填写，如需修改请前往「我的账号」。
+            {config.isTeam ? "队长" : "参赛者"}信息取自你的账号，如有误请联系管理员。
           </>
         }
       />
+
+      {!loading && windowClosed ? (
+        <Alert className="motion-safe:animate-fade-enter mt-6">
+          <CalendarClockIcon />
+          <AlertTitle>{regWindow.state === "upcoming" ? "报名还没开始" : "报名已截止"}</AlertTitle>
+          <AlertDescription>
+            {regWindow.state === "upcoming"
+              ? `报名将于 ${regWindow.begin} 开始，届时再来提交。`
+              : `报名已于 ${regWindow.end} 截止，报名信息不能再提交或修改。`}
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="mt-8">
         {loading ? (
@@ -305,8 +325,17 @@ function RegisterContent() {
               schema={schema}
               onFinish={onFinish}
               onValuesChange={handleValuesChange}
-              disabled={submitting}
+              disabled={submitting || windowClosed}
             />
+            {submitError ? (
+              <div ref={errorRef} className="mt-8 scroll-mt-24">
+                <Alert variant="destructive" className="motion-safe:animate-fade-enter">
+                  <CircleAlertIcon />
+                  <AlertTitle>提交没有成功</AlertTitle>
+                  <AlertDescription>{submitError}</AlertDescription>
+                </Alert>
+              </div>
+            ) : null}
             <div className="mt-8 hidden border-t pt-6 sm:flex sm:justify-end">{submitButton}</div>
           </>
         )}

@@ -3,12 +3,18 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { CalendarClockIcon, ImageOffIcon, InfoIcon, MegaphoneIcon, PlusIcon } from "lucide-react"
-import { toast } from "sonner"
+import {
+  CalendarClockIcon,
+  FileQuestionIcon,
+  ImageOffIcon,
+  InfoIcon,
+  MegaphoneIcon,
+  PlusIcon,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PageContainer, MobileActionBar } from "@/components/common/page-header"
-import { EmptyState, LoadingState } from "@/components/common/states"
+import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { CompetitionNotice } from "@/components/competition/competition-notice"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { getJudgeWorkTotal, getScoreWorkTotal } from "@/lib/api/judge"
@@ -97,6 +103,13 @@ function Timeline({ phases }: { phases: Phase[] }) {
   )
 }
 
+type EntryAction = {
+  label: string
+  onClick?: () => void
+  /** 不可用时的原因，按钮置灰并在旁边说明 */
+  reason?: string
+}
+
 function ActivityDetailContent() {
   const params = useSearchParams()
   const router = useRouter()
@@ -106,10 +119,15 @@ function ActivityDetailContent() {
 
   const [detail, setDetail] = React.useState<CompetitionDetailType>(EMPTY_DETAIL)
   const [notices, setNotices] = React.useState<CompetitionNoticeItem[]>([])
+  const [loadError, setLoadError] = React.useState<"network" | "missing" | null>(null)
   const detailState = useLoadState(`detail:${id}`)
   const noticeState = useLoadState(`notice:${id}`)
+  // 选手看是否已报名，评委 / 审批人员看本赛是否有分配给自己的项目
+  const entryState = useLoadState(`entry:${id}:${role}`)
   const isLoading = detailState.loading
   const noticeLoading = noticeState.loading
+  const needsEntryCheck = role === "user" || role === "judge" || role === "approver"
+  const entryLoading = needsEntryCheck && entryState.loading
   const [entranceAvailable, setEntranceAvailable] = React.useState(false)
   const [isSigned, setIsSigned] = React.useState(false)
   const [activeSection, setActiveSection] = React.useState("description")
@@ -121,15 +139,28 @@ function ActivityDetailContent() {
       .then((res) => {
         if (cancelled) return
         if (res.data.data) {
+          setLoadError(null)
           setDetail(res.data.data)
           setPageLabel(res.data.data.name)
+        } else {
+          setLoadError("missing")
         }
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (!cancelled) setLoadError("network")
+      })
       .finally(() => {
         if (!cancelled) detailState.markLoaded(detailState.requestKey)
       })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailState.requestKey])
 
+  React.useEffect(() => {
+    if (!id) return
+    let cancelled = false
     getCompetitionNoticeList(id)
       .then((res) => {
         if (!cancelled) setNotices(res.data.data ?? [])
@@ -138,34 +169,33 @@ function ActivityDetailContent() {
       .finally(() => {
         if (!cancelled) noticeState.markLoaded(noticeState.requestKey)
       })
-
-    if (role === "approver") {
-      getScoreWorkTotal(id)
-        .then((res) => {
-          if (!cancelled && res.data.data !== 0) setEntranceAvailable(true)
-        })
-        .catch(() => undefined)
-    }
-    if (role === "judge") {
-      getJudgeWorkTotal(id)
-        .then((res) => {
-          if (!cancelled && res.data.data !== 0) setEntranceAvailable(true)
-        })
-        .catch(() => undefined)
-    }
-    if (role === "user") {
-      getTeamInfo(id)
-        .then((res) => {
-          if (!cancelled && res.data.errMsg !== "您还未报名该比赛") setIsSigned(true)
-        })
-        .catch(() => undefined)
-    }
-
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailState.requestKey, noticeState.requestKey, role])
+  }, [noticeState.requestKey])
+
+  React.useEffect(() => {
+    if (!id || !needsEntryCheck) return
+    let cancelled = false
+    const request =
+      role === "user"
+        ? getTeamInfo(id).then((res) => {
+            if (!cancelled) setIsSigned(res.data.errMsg !== "您还未报名该比赛")
+          })
+        : (role === "approver" ? getScoreWorkTotal(id) : getJudgeWorkTotal(id)).then((res) => {
+            if (!cancelled) setEntranceAvailable(res.data.data !== 0)
+          })
+    request
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) entryState.markLoaded(entryState.requestKey)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryState.requestKey])
 
   // 滚动高亮当前锚点
   React.useEffect(() => {
@@ -184,48 +214,46 @@ function ActivityDetailContent() {
     return () => observer.disconnect()
   }, [isLoading])
 
-  const buttonContent = () => {
+  const regState = phaseState(detail.regBegin, detail.regEnd)
+
+  /** 主按钮：按角色与比赛阶段给出下一步，不可用时直接说明原因 */
+  const entryAction = (): EntryAction => {
     switch (role) {
       case "admin":
-        return "管理比赛"
+        return {
+          label: "管理比赛",
+          onClick: () => router.push(withQuery("/activity/manage", { id })),
+        }
       case "user":
-        return isSigned ? "查看报名详情" : "立即报名"
+        if (isSigned) {
+          return {
+            label: "查看报名详情",
+            onClick: () => router.push(withQuery("/activity/register-detail", { id })),
+          }
+        }
+        if (regState === "upcoming") {
+          return { label: "报名未开始", reason: `报名将于 ${detail.regBegin} 开始` }
+        }
+        if (regState === "done") {
+          return { label: "报名已截止", reason: `报名已于 ${detail.regEnd} 截止` }
+        }
+        return {
+          label: "立即报名",
+          onClick: () => router.push(withQuery("/activity/register", { id })),
+        }
       case "judge":
-        return "进入审核"
-      case "approver":
-        return "进入评审"
+      case "approver": {
+        const verb = role === "judge" ? "审核" : "评审"
+        if (!entranceAvailable) {
+          return { label: `暂无待${verb}项目`, reason: `本比赛还没有分配给你${verb}的项目` }
+        }
+        return {
+          label: `进入${verb}`,
+          onClick: () => router.push(withQuery("/review/list", { comId: id, page: 1 })),
+        }
+      }
       default:
-        return "请先登录"
-    }
-  }
-
-  const noItemToast = (message: string, description: string) =>
-    toast.warning(message, {
-      id: "no-item",
-      description,
-      action: {
-        label: "马上前往",
-        onClick: () => router.push("/review"),
-      },
-    })
-
-  const handleButtonAction = () => {
-    if (role === "user") {
-      router.push(withQuery(isSigned ? "/activity/register-detail" : "/activity/register", { id }))
-    } else if (role === "judge") {
-      if (entranceAvailable) {
-        router.push(withQuery("/review/list", { comId: id, page: 1 }))
-      } else {
-        noItemToast("当前比赛没有需要审核的项目", "请到审核列表查看所有需要审核的项目")
-      }
-    } else if (role === "approver") {
-      if (entranceAvailable) {
-        router.push(withQuery("/review/list", { comId: id, page: 1 }))
-      } else {
-        noItemToast("当前比赛没有需要评审的项目", "请到评审列表查看所有需要评审的项目")
-      }
-    } else if (role === "admin") {
-      router.push(withQuery("/activity/manage", { id }))
+        return { label: "请先登录" }
     }
   }
 
@@ -237,20 +265,60 @@ function ActivityDetailContent() {
     )
   }
 
+  if (!isLoading && loadError === "missing") {
+    return (
+      <PageContainer>
+        <EmptyState
+          icon={FileQuestionIcon}
+          title="比赛不存在"
+          description="这个比赛可能已被删除，或链接有误。"
+          className="min-h-[50vh]"
+          action={
+            <Button variant="outline" onClick={() => router.push("/activity")}>
+              返回比赛入口
+            </Button>
+          }
+        />
+      </PageContainer>
+    )
+  }
+
+  if (!isLoading && loadError === "network") {
+    return (
+      <PageContainer>
+        <ErrorState
+          className="min-h-[50vh]"
+          description="比赛信息没有加载出来，请检查网络后重试。"
+          onRetry={() => {
+            detailState.reload()
+            noticeState.reload()
+            entryState.reload()
+          }}
+        />
+      </PageContainer>
+    )
+  }
+
   const phases: Phase[] = [
     { key: "reg", label: "报名", begin: detail.regBegin, end: detail.regEnd },
     { key: "submit", label: "材料提交", begin: detail.submitBegin, end: detail.submitEnd },
     { key: "review", label: "评审", begin: detail.reviewBegin, end: detail.reviewEnd },
   ]
-  const regState = phaseState(detail.regBegin, detail.regEnd)
-
-  const primaryAction = isLoading ? (
-    <Skeleton className="h-10 w-full sm:w-32" />
-  ) : (
-    <Button size="lg" onClick={handleButtonAction} disabled={role === "offline"}>
-      {buttonContent()}
-    </Button>
-  )
+  const action = entryAction()
+  const primaryAction =
+    isLoading || entryLoading ? (
+      <Skeleton className="h-10 w-full sm:w-32" />
+    ) : (
+      <Button
+        size="lg"
+        onClick={action.onClick}
+        disabled={!action.onClick}
+        title={action.reason}
+        className="motion-safe:animate-fade-enter"
+      >
+        {action.label}
+      </Button>
+    )
 
   return (
     <PageContainer>
@@ -292,10 +360,19 @@ function ActivityDetailContent() {
               <h1 className="text-balance-pretty text-2xl font-bold tracking-tight sm:text-3xl">
                 {detail.name}
               </h1>
+              {/* 手机上主按钮在底栏，按钮不可用的原因放在标题下 */}
+              {!entryLoading && action.reason && role !== "user" ? (
+                <p className="text-muted-foreground text-sm sm:hidden">{action.reason}</p>
+              ) : null}
             </>
           )}
         </div>
-        <div className="hidden shrink-0 sm:block">{primaryAction}</div>
+        <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
+          {primaryAction}
+          {!isLoading && !entryLoading && action.reason ? (
+            <p className="text-muted-foreground text-xs">{action.reason}</p>
+          ) : null}
+        </div>
       </div>
 
       {/* 手机端锚点：横向滚动的分段导航 */}
