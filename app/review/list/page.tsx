@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { CalendarClockIcon, ClipboardListIcon, GaugeIcon } from "lucide-react"
+import { ArrowRightIcon, CalendarClockIcon, ClipboardListIcon, GaugeIcon } from "lucide-react"
 import { toast } from "sonner"
 import { notifyRequestError } from "@/lib/api/errors"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +21,7 @@ import { PageContainer, PageHeader } from "@/components/common/page-header"
 import { DataPagination } from "@/components/common/data-pagination"
 import { MobileList, MobileListItem, TableSurface } from "@/components/common/data-list"
 import { StatStrip } from "@/components/common/stat-strip"
-import { EmptyState, LoadingState } from "@/components/common/states"
+import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { getJudgeWorkList, getScoreWorkList } from "@/lib/api/judge"
 import { getCompetitionInfo } from "@/lib/api/user"
@@ -42,7 +42,8 @@ function ReviewListContent() {
   const actionLabel = isApprover ? "评审" : "审核"
   const setPageLabel = useUiStore((state) => state.setPageLabel)
 
-  const { requestKey, loading, markLoaded } = useLoadState(`${comId}|${page}|${isApprover}`)
+  const { requestKey, loading, markLoaded, reload } = useLoadState(`${comId}|${page}|${isApprover}`)
+  const [failed, setFailed] = React.useState(false)
   const [programList, setProgramList] = React.useState<ProgramListItem[]>([])
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 10 })
   const [competitionName, setCompetitionName] = React.useState("")
@@ -73,8 +74,8 @@ function ReviewListContent() {
 
         const result = listRes.data.data
         if (result === null || result === undefined) {
-          toast.info("该页面没有数据，返回上一页")
-          router.push("/review")
+          toast.info("该页面没有数据，已返回比赛列表")
+          router.replace("/review")
           return
         }
 
@@ -104,13 +105,16 @@ function ReviewListContent() {
           }
         }
 
+        setFailed(false)
         setDoneCount(completed)
         setProgramList(list)
         setMeta({ total: result.total ?? 0, pageSize: result.pageSize ?? 10 })
         writeStorage(STORAGE_KEYS.listTotal, String(result.total ?? 0))
       })
       .catch((error) => {
-        if (!cancelled) notifyRequestError(error, "😭 数据加载失败，请稍后重试")
+        if (cancelled) return
+        setFailed(true)
+        notifyRequestError(error, "😭 数据加载失败，请稍后重试")
       })
       .finally(() => {
         if (!cancelled) markLoaded(requestKey)
@@ -126,8 +130,9 @@ function ReviewListContent() {
     router.push(withQuery("/review/list", { comId, page: nextPage }))
   }
 
+  // 带上比赛与页码，详情页提交后可以直接进入本页的下一个待处理项目
   const openDetail = (recordId: number) =>
-    router.push(withQuery("/review/detail", { id: recordId }))
+    router.push(withQuery("/review/detail", { id: recordId, comId, page }))
 
   if (!comId) {
     return (
@@ -137,13 +142,19 @@ function ReviewListContent() {
     )
   }
 
-  const progress = meta.total > 0 ? Math.round((doneCount / meta.total) * 100) : 0
+  // 接口只返回当前页的完成情况，多页时进度按本页统计，避免拿本页完成数除以总数
+  const multiPage = meta.total > programList.length
+  const pageCount = programList.length
+  const progress = pageCount > 0 ? Math.round((doneCount / pageCount) * 100) : 0
+  const totalPages = Math.max(1, Math.ceil(meta.total / Math.max(1, meta.pageSize)))
+  const isDone = (record: ProgramListItem) => (isApprover ? record.isApprove : record.isJudge)
+  const nextPending = isEnd ? undefined : programList.find((record) => !isDone(record))
 
   const resultCell = (record: ProgramListItem) =>
     isApprover ? (record.score ?? "—") : (record.isPass as string) || "—"
 
   const statusBadge = (record: ProgramListItem) => {
-    const done = isApprover ? record.isApprove : record.isJudge
+    const done = isDone(record)
     return (
       <Badge variant={done ? "secondary" : "default"}>
         {isApprover ? (done ? "已评分" : "待评分") : done ? "已审核" : "待审核"}
@@ -156,7 +167,25 @@ function ReviewListContent() {
       <PageHeader
         eyebrow={competitionName || undefined}
         title="项目列表"
-        description={`点击任意项目进入详情并完成${actionLabel}。`}
+        description={
+          isEnd
+            ? `${actionLabel}已截止，仍可查看项目与已提交的结果。`
+            : `点击任意项目进入详情并完成${actionLabel}。`
+        }
+        actions={
+          loading || isEnd ? null : nextPending ? (
+            <Button onClick={() => openDetail(nextPending.id)}>
+              继续{actionLabel}
+              <ArrowRightIcon className="size-4" />
+            </Button>
+          ) : page < totalPages ? (
+            // 本页都处理完了，还有下一页
+            <Button variant="outline" onClick={() => goToPage(page + 1)}>
+              本页已完成，去下一页
+              <ArrowRightIcon className="size-4" />
+            </Button>
+          ) : null
+        }
       />
 
       <StatStrip
@@ -165,12 +194,17 @@ function ReviewListContent() {
         items={[
           {
             key: "progress",
-            label: `${actionLabel}进度`,
+            label: multiPage ? `本页${actionLabel}进度` : `${actionLabel}进度`,
             icon: GaugeIcon,
             tone: "text-primary",
             value: doneCount,
-            suffix: `/ ${meta.total}`,
-            extra: <Progress value={progress} className="h-1.5 max-w-60" />,
+            suffix: multiPage ? `/ ${pageCount}（共 ${meta.total} 个项目）` : `/ ${pageCount}`,
+            extra: (
+              <Progress
+                value={progress}
+                className="h-1.5 max-w-60 [&>[data-slot=progress-indicator]]:duration-500"
+              />
+            ),
           },
           {
             key: "deadline",
@@ -198,6 +232,8 @@ function ReviewListContent() {
               <Skeleton key={index} className="h-14 w-full rounded-lg" />
             ))}
           </div>
+        ) : failed ? (
+          <ErrorState description="项目列表没有加载出来，请检查网络后重试。" onRetry={reload} />
         ) : programList.length === 0 ? (
           <EmptyState
             icon={ClipboardListIcon}
@@ -206,7 +242,7 @@ function ReviewListContent() {
           />
         ) : (
           <>
-            <TableSurface className="hidden md:block">
+            <TableSurface className="motion-safe:animate-fade-enter hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -239,14 +275,13 @@ function ReviewListContent() {
                       <TableCell className="text-right">
                         <Button
                           size="sm"
-                          variant="outline"
-                          disabled={isEnd}
+                          variant={isEnd || isDone(record) ? "outline" : "default"}
                           onClick={(event) => {
                             event.stopPropagation()
                             openDetail(record.id)
                           }}
                         >
-                          {isEnd ? "已结束" : isApprover ? "查看" : "审核"}
+                          {isEnd || isDone(record) ? "查看" : actionLabel}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -255,7 +290,7 @@ function ReviewListContent() {
               </Table>
             </TableSurface>
 
-            <MobileList className="md:hidden">
+            <MobileList className="motion-safe:animate-fade-enter md:hidden">
               {programList.map((record) => (
                 <MobileListItem
                   key={record.id}
