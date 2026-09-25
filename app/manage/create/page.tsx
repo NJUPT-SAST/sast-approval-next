@@ -11,7 +11,10 @@ import { Steps } from "@/components/common/steps"
 import { CompetitionForm, type ReviewSetting } from "@/components/competition/competition-form"
 import { WhiteListForm } from "@/components/competition/white-list-form"
 import { createCompetitionInfo, editWhiteList } from "@/lib/api/admin"
+import { notifyRequestError } from "@/lib/api/errors"
+import { buildReviewSettings, validateCompetition } from "@/lib/competition-validation"
 import { template } from "@/lib/constants/form-templates"
+import { focusField } from "@/lib/focus-field"
 import { withQuery } from "@/lib/navigation"
 import { useUserStore } from "@/lib/store/user"
 import type { CompetitionInfoType } from "@/lib/types/api"
@@ -38,6 +41,8 @@ export default function CreateCompetitionPage() {
   const [competitionId, setCompetitionId] = React.useState(-1)
   const [checked, setChecked] = React.useState(false)
   const [fileList, setFileList] = React.useState<File[]>([])
+  // 校验未通过的控件 id，任何改动后清掉，提交时重新校验
+  const [invalidField, setInvalidField] = React.useState<string | null>(null)
 
   const [competitionInfo, setCompetitionInfo] = React.useState<CompetitionInfoType>({
     name: "",
@@ -57,8 +62,10 @@ export default function CreateCompetitionPage() {
     cover: "",
   })
 
-  const patchInfo = (patch: Partial<CompetitionInfoType>) =>
+  const patchInfo = (patch: Partial<CompetitionInfoType>) => {
+    setInvalidField(null)
     setCompetitionInfo((prev) => ({ ...prev, ...patch }))
+  }
 
   const setStartTime = (time: string, operation: string) => {
     if (operation === "signUp") patchInfo({ reg_begin_time: time })
@@ -72,11 +79,15 @@ export default function CreateCompetitionPage() {
     if (operation === "review") patchInfo({ review_end_time: time })
   }
 
-  const setReviewerKey = (index: number, key: number) =>
+  const setReviewerKey = (index: number, key: number) => {
+    setInvalidField(null)
     setReviewSettings((prev) => prev.map((item, i) => (i === index ? { ...item, key } : item)))
+  }
 
-  const setReviewerValue = (index: number, value: string) =>
+  const setReviewerValue = (index: number, value: string) => {
+    setInvalidField(null)
     setReviewSettings((prev) => prev.map((item, i) => (i === index ? { ...item, value } : item)))
+  }
 
   const handleAddReviewer = () => {
     if (competitionInfo.is_review === 1) {
@@ -103,20 +114,12 @@ export default function CreateCompetitionPage() {
 
   /** 发布活动 */
   const postCompetition = async () => {
-    if (!competitionInfo.name.trim()) {
-      toast.error("请填写比赛名称")
+    const issue = validateCompetition(competitionInfo, reviewSettings, reviewerNum)
+    if (issue) {
+      setInvalidField(issue.field)
+      toast.error(issue.message)
+      focusField(issue.field)
       return
-    }
-    if (!competitionInfo.introduce.trim()) {
-      toast.error("请填写比赛简介")
-      return
-    }
-
-    const reviewSettingMap = new Map<number, string>([
-      [reviewSettings[0].key, reviewSettings[0].value],
-    ])
-    for (let i = 0; i < reviewerNum; i += 1) {
-      if (reviewSettings[i]) reviewSettingMap.set(reviewSettings[i].key, reviewSettings[i].value)
     }
 
     setSubmitting(true)
@@ -124,41 +127,49 @@ export default function CreateCompetitionPage() {
       // 负责人学号在提交时取当前登录用户，避免依赖 effect 同步
       const res = await createCompetitionInfo(
         { ...competitionInfo, user_code: profile.code },
-        Object.fromEntries(reviewSettingMap.entries()),
+        buildReviewSettings(reviewSettings, reviewerNum),
         cover
       )
       if (res.data.success === true) {
         setCompetitionId(res.data.data)
-        toast.success("😸 发布成功", { description: "请选择是否需要白名单" })
+        toast.success("😸 比赛已发布", { description: "可以继续设置报名白名单，也可以跳过" })
         setCurrentStep(1)
         window.scrollTo({ top: 0, behavior: "smooth" })
       } else {
-        toast.error("😭 发布失败", { description: res.data.errMsg ?? "" })
+        toast.error("😭 发布失败", { description: res.data.errMsg ?? "请检查填写内容后重试" })
       }
     } catch (error) {
-      toast.error("😭 发布失败", { description: String(error) })
+      notifyRequestError(error, "😭 发布失败", { description: "请稍后重试" })
     } finally {
       setSubmitting(false)
     }
   }
 
+  /** 创建完成：进入比赛详情，替换当前记录，返回时不会回到已经发布过的创建表单 */
+  const finish = () => router.replace(withQuery("/activity/detail", { id: competitionId }))
+
   /** 设置白名单并结束创建流程 */
   const postWhiteList = async () => {
-    if (checked && fileList.length === 0) {
-      toast.error("😭 设置失败", { description: "请先上传文件或者选择不设置白名单！" })
+    if (!checked) {
+      // 新比赛默认就是全校开放，不开白名单时不需要再请求一次
+      finish()
+      return
+    }
+    if (fileList.length === 0) {
+      toast.error("请先上传白名单文件", { description: "或者关闭白名单，面向全校开放报名" })
       return
     }
     setSubmitting(true)
     try {
-      const res = await editWhiteList(competitionId, checked, checked ? fileList[0] : undefined)
+      const res = await editWhiteList(competitionId, true, fileList[0])
       if (res.data.success) {
-        toast.success("设置成功！")
-        router.push(withQuery("/activity/detail", { id: competitionId }))
+        toast.success("😸 白名单已设置")
+        finish()
       } else {
-        toast.error("😭 设置失败", { description: res.data.errMsg ?? "" })
+        toast.error("😭 白名单设置失败", { description: res.data.errMsg ?? "请检查文件后重试" })
       }
-    } catch {
-      toast.error("😭 设置失败")
+    } catch (error) {
+      notifyRequestError(error, "😭 白名单设置失败", { description: "请稍后重试" })
     } finally {
       setSubmitting(false)
     }
@@ -187,7 +198,7 @@ export default function CreateCompetitionPage() {
         ) : (
           <CheckIcon className="size-4" />
         )}
-        完成创建
+        {checked ? "保存白名单并完成" : "完成创建"}
       </Button>
     )
 
@@ -200,7 +211,7 @@ export default function CreateCompetitionPage() {
 
       <Steps steps={STEPS} current={currentStep} className="mt-8" />
 
-      <div className="mt-10">
+      <div key={currentStep} className="motion-safe:animate-fade-enter mt-10">
         {currentStep === 0 ? (
           <CompetitionForm
             info={competitionInfo}
@@ -222,6 +233,7 @@ export default function CreateCompetitionPage() {
             setStartTime={setStartTime}
             setEndTime={setEndTime}
             disabled={submitting}
+            invalidField={invalidField}
           />
         ) : (
           <Section

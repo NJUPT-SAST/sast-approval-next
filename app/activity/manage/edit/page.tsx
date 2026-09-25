@@ -18,11 +18,17 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { PageContainer, PageHeader, MobileActionBar } from "@/components/common/page-header"
-import { EmptyState, LoadingState } from "@/components/common/states"
+import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { CompetitionForm, type ReviewSetting } from "@/components/competition/competition-form"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { deleteCompetitionInfo, editCompetitionInfo, viewCompetitionInfo } from "@/lib/api/admin"
+import {
+  buildReviewSettings,
+  reviewSettingsFromApi,
+  validateCompetition,
+} from "@/lib/competition-validation"
 import { template } from "@/lib/constants/form-templates"
+import { focusField } from "@/lib/focus-field"
 import { withQuery } from "@/lib/navigation"
 import { useUiStore } from "@/lib/store/ui"
 import { useUserStore } from "@/lib/store/user"
@@ -35,8 +41,13 @@ function EditCompetitionContent() {
   const profile = useUserStore((state) => state.profile)
   const setPageLabel = useUiStore((state) => state.setPageLabel)
 
-  const { requestKey, loading, markLoaded } = useLoadState(String(competitionId))
+  const { requestKey, loading, markLoaded, reload } = useLoadState(String(competitionId))
+  const [loadError, setLoadError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
+  // 校验未通过的控件 id，任何改动后清掉，提交时重新校验
+  const [invalidField, setInvalidField] = React.useState<string | null>(null)
   const [cover, setCover] = React.useState<Blob>()
   const [coverPreview, setCoverPreview] = React.useState("")
   const [preSchema, setPreSchema] = React.useState<object | null>(null)
@@ -65,8 +76,10 @@ function EditCompetitionContent() {
     cover: "",
   })
 
-  const patchInfo = (patch: Partial<CompetitionInfoType>) =>
+  const patchInfo = (patch: Partial<CompetitionInfoType>) => {
+    setInvalidField(null)
     setCompetitionInfo((prev) => ({ ...prev, ...patch }))
+  }
 
   React.useEffect(() => {
     if (!competitionId) return
@@ -75,24 +88,15 @@ function EditCompetitionContent() {
       .then((res) => {
         if (cancelled) return
         if (!res.data.success) {
-          toast.error("😭 获取活动信息失败", { description: res.data.errMsg ?? "" })
-          router.back()
+          setLoadError(res.data.errMsg || "比赛信息获取失败")
           return
         }
+        setLoadError(null)
         const data = res.data.data
-        const array: ReviewSetting[] = []
-        if (data.is_review === true) {
-          Object.getOwnPropertyNames(data.review_settings ?? {}).forEach((key) => {
-            array.push({ key: Number(key), value: data.review_settings[key] })
-          })
-          if (array.length === 0) {
-            array.push({ key: 0, value: "" })
-            array.push({ key: -1, value: "" })
-          }
-          if (array.length === 1) array.push({ key: -1, value: "" })
-        } else {
-          array.push({ key: 0, value: "" })
-        }
+        const array: ReviewSetting[] =
+          data.is_review === true
+            ? reviewSettingsFromApi(data.review_settings)
+            : [{ key: 0, value: "" }]
         setReviewerNum(array.length)
         setReviewSettings(array)
         setPreSchema(data.table ?? null)
@@ -118,8 +122,8 @@ function EditCompetitionContent() {
       })
       .catch((error) => {
         if (cancelled) return
-        notifyRequestError(error, "😭 获取活动信息失败")
-        router.back()
+        setLoadError("比赛信息没有加载出来，请检查网络后重试。")
+        notifyRequestError(error, "😭 获取比赛信息失败")
       })
       .finally(() => {
         if (!cancelled) markLoaded(requestKey)
@@ -142,11 +146,15 @@ function EditCompetitionContent() {
     if (operation === "review") patchInfo({ review_end_time: time })
   }
 
-  const setReviewerKey = (index: number, key: number) =>
+  const setReviewerKey = (index: number, key: number) => {
+    setInvalidField(null)
     setReviewSettings((prev) => prev.map((item, i) => (i === index ? { ...item, key } : item)))
+  }
 
-  const setReviewerValue = (index: number, value: string) =>
+  const setReviewerValue = (index: number, value: string) => {
+    setInvalidField(null)
     setReviewSettings((prev) => prev.map((item, i) => (i === index ? { ...item, value } : item)))
+  }
 
   const handleAddReviewer = () => {
     if (competitionInfo.is_review === 1) {
@@ -176,47 +184,50 @@ function EditCompetitionContent() {
   }
 
   const submitEdit = async () => {
-    const reviewSettingMap = new Map<number, string>([
-      [reviewSettings[0].key, reviewSettings[0].value],
-    ])
-    for (let i = 0; i < reviewerNum; i += 1) {
-      if (reviewSettings[i]) reviewSettingMap.set(reviewSettings[i].key, reviewSettings[i].value)
+    const issue = validateCompetition(competitionInfo, reviewSettings, reviewerNum)
+    if (issue) {
+      setInvalidField(issue.field)
+      toast.error(issue.message)
+      focusField(issue.field)
+      return
     }
     setSubmitting(true)
     try {
       const res = await editCompetitionInfo(
         competitionId,
         competitionInfo,
-        Object.fromEntries(reviewSettingMap.entries()),
+        buildReviewSettings(reviewSettings, reviewerNum),
         cover
       )
       if (res.data.success) {
-        toast.success("😸 保存成功", { description: "快去看看更新后的比赛吧" })
-        router.push(withQuery("/activity/detail", { id: res.data.data ?? competitionId }))
+        toast.success("😸 保存成功", { description: "已打开更新后的比赛详情" })
+        // 替换掉编辑页，返回时回到进入编辑前的页面
+        router.replace(withQuery("/activity/detail", { id: res.data.data ?? competitionId }))
       } else {
-        toast.error("😭 保存失败", { description: res.data.errMsg ?? "" })
+        toast.error("😭 保存失败", { description: res.data.errMsg ?? "请检查填写内容后重试" })
       }
-    } catch {
-      toast.error("😭 保存失败")
+    } catch (error) {
+      notifyRequestError(error, "😭 保存失败", { description: "请稍后重试" })
     } finally {
       setSubmitting(false)
     }
   }
 
   const submitDelete = async () => {
-    setSubmitting(true)
+    setDeleting(true)
     try {
       const res = await deleteCompetitionInfo(competitionId)
       if (res.data.success) {
-        toast.success("😸 删除成功")
-        router.push("/manage")
+        toast.success("😸 比赛已删除")
+        setDeleteOpen(false)
+        router.replace("/manage")
       } else {
-        toast.error("😭 删除失败", { description: res.data.errMsg ?? "" })
+        toast.error("😭 删除失败", { description: res.data.errMsg ?? "请稍后重试" })
       }
-    } catch {
-      toast.error("😭 删除失败")
+    } catch (error) {
+      notifyRequestError(error, "😭 删除失败", { description: "请稍后重试" })
     } finally {
-      setSubmitting(false)
+      setDeleting(false)
     }
   }
 
@@ -230,8 +241,16 @@ function EditCompetitionContent() {
 
   if (loading) return <LoadingState label="正在加载比赛信息……" className="min-h-[60vh]" />
 
+  if (loadError) {
+    return (
+      <PageContainer>
+        <ErrorState className="min-h-[50vh]" description={loadError} onRetry={reload} />
+      </PageContainer>
+    )
+  }
+
   const deleteDialog = (
-    <AlertDialog>
+    <AlertDialog open={deleteOpen} onOpenChange={(open) => !deleting && setDeleteOpen(open)}>
       <AlertDialogTrigger asChild>
         <Button
           variant="ghost"
@@ -250,12 +269,18 @@ function EditCompetitionContent() {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
           <AlertDialogAction
-            onClick={submitDelete}
+            onClick={(event) => {
+              // 等请求结束再关闭，失败时弹窗还在，可以直接重试
+              event.preventDefault()
+              void submitDelete()
+            }}
+            disabled={deleting}
             className="bg-destructive hover:bg-destructive/90 text-white"
           >
-            确认删除
+            {deleting ? <Loader2Icon className="size-4 animate-spin" /> : null}
+            {deleting ? "正在删除…" : "确认删除"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -308,6 +333,7 @@ function EditCompetitionContent() {
           setStartTime={setStartTime}
           setEndTime={setEndTime}
           disabled={submitting}
+          invalidField={invalidField}
         />
       </div>
 

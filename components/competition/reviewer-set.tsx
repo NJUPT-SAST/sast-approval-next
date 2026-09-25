@@ -20,6 +20,8 @@ type ReviewerSetProps = {
   /** 学院列表，来自 GET /com/department/list */
   departments: Department[]
   departmentsLoading?: boolean
+  /** 校验未通过的控件 id */
+  invalidField?: string | null
 }
 
 /** 单条「审核者学号 + 负责学院」配置，等价于旧版 ReviewSet */
@@ -31,6 +33,7 @@ export function ReviewerSet({
   disabled,
   departments,
   departmentsLoading,
+  invalidField,
 }: ReviewerSetProps) {
   // 已保存的学院代号在后端列表里找不到（学院被删除或合并），需要显式暴露，
   // 否则下拉只会渲染成空白，管理员无从得知这条审核关系已经失效。
@@ -48,6 +51,7 @@ export function ReviewerSet({
           placeholder="审核者学号"
           value={value.value}
           disabled={disabled}
+          aria-invalid={invalidField === `reviewer-code-${index}` || undefined}
           onChange={(event) => setValue(index, event.target.value)}
         />
       </div>
@@ -60,7 +64,11 @@ export function ReviewerSet({
           onValueChange={(next) => setKey(index, Number(next))}
           disabled={selectDisabled}
         >
-          <SelectTrigger id={`reviewer-college-${index}`} className="w-full">
+          <SelectTrigger
+            id={`reviewer-college-${index}`}
+            className="w-full"
+            aria-invalid={invalidField === `reviewer-college-${index}` || isOrphanKey || undefined}
+          >
             <SelectValue placeholder={departmentsLoading ? "学院加载中……" : "选择学院"} />
           </SelectTrigger>
           <SelectContent>

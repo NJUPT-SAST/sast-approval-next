@@ -13,6 +13,8 @@ type TimeRangeFieldProps = {
   setStartTime: (time: string, operation: string) => void
   setEndTime: (time: string, operation: string) => void
   disabled?: boolean
+  /** 校验未通过的控件 id，命中本组的开始 / 截止时标红 */
+  invalidField?: string | null
 }
 
 /** 起止时间选择，等价于旧版 TimeRanger */
@@ -23,6 +25,7 @@ export function TimeRangeField({
   setStartTime,
   setEndTime,
   disabled,
+  invalidField,
 }: TimeRangeFieldProps) {
   const label = NAME[operation] ?? operation
   return (
@@ -33,6 +36,8 @@ export function TimeRangeField({
           id={`${operation}-start`}
           value={preStartTime}
           placeholder="开始时间"
+          defaultTime="00:00:00"
+          invalid={invalidField === `${operation}-start`}
           onChange={(time) => setStartTime(time, operation)}
           disabled={disabled}
         />
@@ -41,6 +46,8 @@ export function TimeRangeField({
           id={`${operation}-end`}
           value={preEndTime}
           placeholder="截止时间"
+          defaultTime="23:59:59"
+          invalid={invalidField === `${operation}-end`}
           onChange={(time) => setEndTime(time, operation)}
           disabled={disabled}
         />

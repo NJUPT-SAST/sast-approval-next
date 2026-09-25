@@ -8,6 +8,7 @@ import {
   DownloadIcon,
   FileSpreadsheetIcon,
   FolderDownIcon,
+  Loader2Icon,
   MegaphoneIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -43,7 +44,7 @@ import { DataPagination } from "@/components/common/data-pagination"
 import { IndexBadge, MobileList, MobileListItem, TableSurface } from "@/components/common/data-list"
 import { Section } from "@/components/common/section"
 import { StatStrip } from "@/components/common/stat-strip"
-import { EmptyState, LoadingState } from "@/components/common/states"
+import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { FileDropzone } from "@/components/common/file-dropzone"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import {
@@ -110,11 +111,13 @@ function ManageDetailContent() {
   const [regState, setRegState] = React.useState({ regNum: 0, revNum: 0, subNum: 0 })
   const [data, setData] = React.useState<ManageDetailItem[]>([])
   const [importing, setImporting] = React.useState(false)
+  const [failed, setFailed] = React.useState(false)
 
   const getList = React.useCallback(
     (competitionId: number, pageNumber: number, pageSize: number, key: string) => {
       return getManageCompetitionList(competitionId, pageNumber, pageSize)
         .then((res) => {
+          setFailed(false)
           const payload = res.data.data
           if (!payload) {
             setData([])
@@ -131,6 +134,7 @@ function ManageDetailContent() {
           setPageState((prev) => ({ ...prev, total: payload.total ?? 0 }))
         })
         .catch((error) => {
+          setFailed(true)
           notifyRequestError(error, "😭 请求失败", { id: "loading" })
         })
         .finally(() => markLoaded(key))
@@ -176,8 +180,8 @@ function ManageDetailContent() {
       } else {
         toast.error("😭 导入失败", { id: "download", description: res.data.errMsg ?? "" })
       }
-    } catch {
-      toast.error("😭 导入失败", { id: "download" })
+    } catch (error) {
+      notifyRequestError(error, "😭 导入失败", { id: "download", description: "请稍后重试" })
     } finally {
       setImporting(false)
     }
@@ -318,16 +322,22 @@ function ManageDetailContent() {
                 <Skeleton key={index} className="h-14 w-full rounded-lg" />
               ))}
             </div>
+          ) : failed ? (
+            <ErrorState
+              description="项目列表没有加载出来，请检查网络后重试。"
+              onRetry={reload}
+              className="rounded-xl border border-dashed"
+            />
           ) : data.length === 0 ? (
             <EmptyState
               icon={FileSpreadsheetIcon}
-              title="没有数据"
-              description="现在还没有提交的项目，再等等吧！"
+              title="还没有提交的项目"
+              description="选手提交项目材料后会出现在这里。"
               className="rounded-xl border border-dashed"
             />
           ) : (
             <>
-              <TableSurface className="hidden md:block">
+              <TableSurface className="motion-safe:animate-fade-enter hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
@@ -361,7 +371,7 @@ function ManageDetailContent() {
                 </Table>
               </TableSurface>
 
-              <MobileList className="md:hidden">
+              <MobileList className="motion-safe:animate-fade-enter md:hidden">
                 {data.map((value, index) => (
                   <MobileListItem
                     key={`${value.fileName}-${index}`}
@@ -420,10 +430,11 @@ function ManageDetailContent() {
               <FileDropzone
                 value={fileList}
                 onChange={setFileList}
-                accept=".xlx,.xlsx"
+                accept=".xls,.xlsx"
+                maxSize={5 * 1024 * 1024}
                 maxCount={1}
                 title="点击或拖拽上传评委分配表"
-                hint="仅支持 xlsx、xlx 格式的单个文件"
+                hint="仅支持 xlsx、xls 格式的单个文件"
                 disabled={importing}
               />
               <Button
@@ -431,8 +442,12 @@ function ManageDetailContent() {
                 onClick={uploadJudges}
                 disabled={importing || fileList.length === 0}
               >
-                <UploadIcon className="size-4" />
-                导入评委分配
+                {importing ? (
+                  <Loader2Icon className="size-4 animate-spin" />
+                ) : (
+                  <UploadIcon className="size-4" />
+                )}
+                {importing ? "正在导入…" : "导入评委分配"}
               </Button>
               <p className="text-muted-foreground text-xs leading-relaxed">
                 评委模板含「作品id / 作品名称 / 项目类别」三列，填入评委学号后原表导入即可。
