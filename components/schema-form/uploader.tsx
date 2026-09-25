@@ -5,8 +5,14 @@ import { DownloadIcon, FileIcon, Loader2Icon, UploadIcon, XIcon } from "lucide-r
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { notifyRequestError } from "@/lib/api/errors"
 import { getLicense } from "@/lib/api/user"
-import { downloadCertifiedFile, getOriginalFileName } from "@/lib/file"
+import {
+  downloadCertifiedFile,
+  formatFileSize,
+  getOriginalFileName,
+  putFileWithProgress,
+} from "@/lib/file"
 import { cn } from "@/lib/utils"
 import type { WidgetComponent, WidgetProps } from "./types"
 
@@ -28,6 +34,7 @@ export function createSchemaUploader(competitionId: number): WidgetComponent {
     const inputRef = React.useRef<HTMLInputElement>(null)
     const [uploading, setUploading] = React.useState(false)
     const [progress, setProgress] = React.useState(0)
+    const [uploadingName, setUploadingName] = React.useState<string>()
     const [localName, setLocalName] = React.useState<string>()
 
     const nodeProps = (schema.props ?? {}) as { inputName?: string; accept?: string | string[] }
@@ -40,34 +47,35 @@ export function createSchemaUploader(competitionId: number): WidgetComponent {
     const handleFile = async (file?: File | null) => {
       if (!file) return
       if (file.size > MAX_SIZE) {
-        toast.error("文件大小超过 500MB 限制!")
+        toast.error("文件大小超过 500MB 限制", {
+          description: `${file.name} 为 ${formatFileSize(file.size)}`,
+        })
         return
       }
 
       setUploading(true)
-      setProgress(10)
+      setProgress(0)
+      setUploadingName(file.name)
       try {
         const licenseRes = await getLicense(file.name, inputName, competitionId)
         const payload = licenseRes.data?.data
         if (!payload?.url) {
-          toast.error(`${file.name} 上传失败`, { description: "未能获取上传凭证" })
+          toast.error(`${file.name} 上传失败`, { description: "未能获取上传凭证，请稍后重试" })
           return
         }
-        setProgress(40)
-        const putRes = await fetch(payload.url, { method: "put", body: file })
+        const putRes = await putFileWithProgress(payload.url, file, setProgress)
         if (!putRes.ok) {
           toast.error(`${file.name} 上传失败`, { description: `HTTP ${putRes.status}` })
           return
         }
-        setProgress(100)
         setLocalName(file.name)
         onChange(payload.clearUrl ?? String(payload.url).split("?")[0])
         toast.success(`${file.name} 上传成功`)
-      } catch {
-        toast.error(`${file.name} 上传失败`, { description: "请检查网络后重试" })
+      } catch (error) {
+        notifyRequestError(error, `${file.name} 上传失败`, { description: "请检查网络后重试" })
       } finally {
         setUploading(false)
-        setTimeout(() => setProgress(0), 600)
+        setUploadingName(undefined)
       }
     }
 
@@ -85,7 +93,7 @@ export function createSchemaUploader(competitionId: number): WidgetComponent {
             ) : (
               <UploadIcon className="size-4" />
             )}
-            {uploading ? "正在上传…" : currentUrl ? "重新上传文件" : "点击上传文件"}
+            {uploading ? `正在上传 ${progress}%` : currentUrl ? "重新上传文件" : "点击上传文件"}
           </Button>
           {accept ? (
             <span className="text-muted-foreground text-xs">允许格式：{accept}</span>
@@ -103,7 +111,15 @@ export function createSchemaUploader(competitionId: number): WidgetComponent {
           }}
         />
 
-        {uploading && progress > 0 ? <Progress value={progress} className="h-1.5" /> : null}
+        {uploading ? (
+          <div className="motion-safe:animate-fade-enter space-y-1.5" aria-live="polite">
+            <div className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
+              <span className="truncate">{uploadingName}</span>
+              <span className="shrink-0 font-mono tabular-nums">{progress}%</span>
+            </div>
+            <Progress value={progress} className="h-1.5" />
+          </div>
+        ) : null}
 
         {currentUrl ? (
           <div

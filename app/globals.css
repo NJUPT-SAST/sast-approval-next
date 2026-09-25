@@ -3,6 +3,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * 只动透明度的淡入：页面切换、列表加载完成时使用。
+ * 不用 tw-animate 的 animate-in，它的关键帧会带上 transform / filter，
+ * 动画期间会让页面里 position: fixed 的底部操作栏临时改为相对容器定位。
+ */
+@theme {
+  --animate-fade-enter: fade-enter 240ms ease-out;
+
+  @keyframes fade-enter {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -65,7 +65,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             hasTabBar && "pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0"
           )}
         >
-          <div className="flex-1">{allowed ? children : <NotFoundView />}</div>
+          {/* 以路径为 key，切换页面时淡入一次；系统开启「减少动态效果」时不播放 */}
+          <div key={pathname} className="motion-safe:animate-fade-enter flex-1">
+            {allowed ? children : <NotFoundView />}
+          </div>
           <SiteFooter />
         </div>
         <MobileTabBar />

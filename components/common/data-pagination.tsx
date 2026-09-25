@@ -19,6 +19,8 @@ type DataPaginationProps = {
   onChange: (page: number, pageSize: number) => void
   pageSizeOptions?: number[]
   showSizeChanger?: boolean
+  /** 翻页后是否滚回页面顶部，默认开启 */
+  scrollOnChange?: boolean
   className?: string
 }
 
@@ -42,10 +44,19 @@ export function DataPagination({
   onChange,
   pageSizeOptions,
   showSizeChanger = false,
+  scrollOnChange = true,
   className,
 }: DataPaginationProps) {
   const totalPages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)))
   if (total <= 0) return null
+
+  const change = (page: number, size: number) => {
+    onChange(page, size)
+    if (scrollOnChange) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" })
+    }
+  }
 
   return (
     <div
@@ -55,9 +66,12 @@ export function DataPagination({
       )}
     >
       <p className="text-muted-foreground order-2 text-xs sm:order-1">
-        共 <span className="text-foreground font-medium tabular-nums">{total}</span> 条 · 第{" "}
-        <span className="text-foreground font-medium tabular-nums">{current}</span> / {totalPages}{" "}
-        页
+        共 <span className="text-foreground font-medium tabular-nums">{total}</span> 条
+        <span className="hidden sm:inline">
+          {" "}
+          · 第 <span className="text-foreground font-medium tabular-nums">{current}</span> /{" "}
+          {totalPages} 页
+        </span>
       </p>
 
       <div className="order-1 flex items-center gap-1.5 sm:order-2">
@@ -66,16 +80,20 @@ export function DataPagination({
           size="icon-sm"
           aria-label="上一页"
           disabled={current <= 1}
-          onClick={() => onChange(current - 1, pageSize)}
+          onClick={() => change(current - 1, pageSize)}
         >
           <ChevronLeftIcon className="size-4" />
         </Button>
 
+        {/* 手机上只保留前后翻页，页码按钮太多会撑出屏幕 */}
+        <span className="text-muted-foreground min-w-16 text-center text-sm tabular-nums sm:hidden">
+          <span className="text-foreground font-medium">{current}</span> / {totalPages}
+        </span>
         {buildPages(current, totalPages).map((page, index) =>
           page === "…" ? (
             <span
               key={`ellipsis-${index}`}
-              className="text-muted-foreground w-8 text-center text-sm"
+              className="text-muted-foreground hidden w-8 text-center text-sm sm:inline"
             >
               …
             </span>
@@ -84,8 +102,10 @@ export function DataPagination({
               key={page}
               variant={page === current ? "default" : "outline"}
               size="icon-sm"
-              className="tabular-nums"
-              onClick={() => onChange(page, pageSize)}
+              aria-label={`第 ${page} 页`}
+              aria-current={page === current ? "page" : undefined}
+              className="hidden tabular-nums sm:inline-flex"
+              onClick={() => page !== current && change(page, pageSize)}
             >
               {page}
             </Button>
@@ -97,13 +117,13 @@ export function DataPagination({
           size="icon-sm"
           aria-label="下一页"
           disabled={current >= totalPages}
-          onClick={() => onChange(current + 1, pageSize)}
+          onClick={() => change(current + 1, pageSize)}
         >
           <ChevronRightIcon className="size-4" />
         </Button>
 
         {showSizeChanger && pageSizeOptions ? (
-          <Select value={String(pageSize)} onValueChange={(value) => onChange(1, Number(value))}>
+          <Select value={String(pageSize)} onValueChange={(value) => change(1, Number(value))}>
             <SelectTrigger size="sm" className="ms-1 w-26">
               <SelectValue />
             </SelectTrigger>

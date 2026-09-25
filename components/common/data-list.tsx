@@ -50,6 +50,11 @@ type MobileListItemProps = {
   trailing?: React.ReactNode
   /** 底部一行操作按钮 */
   actions?: React.ReactNode
+  /**
+   * 行尾的独立操作（如「更多」菜单），渲染在整行链接之外，
+   * 避免按钮嵌套在 <a> 里，点击菜单也不会触发整行跳转
+   */
+  menu?: React.ReactNode
   /** 整行可点击跳转 */
   href?: string
   onClick?: () => void
@@ -62,6 +67,7 @@ export function MobileListItem({
   meta,
   trailing,
   actions,
+  menu,
   href,
   onClick,
   className,
@@ -79,29 +85,39 @@ export function MobileListItem({
         ) : null}
       </div>
       {trailing ? <div className="flex shrink-0 items-center gap-2">{trailing}</div> : null}
-      {interactive && !actions ? (
+      {interactive && !actions && !menu ? (
         <ChevronRightIcon className="text-muted-foreground size-4 shrink-0" />
       ) : null}
     </>
   )
 
   const rowClass = cn(
-    "flex items-center gap-3 px-4 py-3.5 text-start",
-    interactive && "active:bg-muted/60 transition-colors"
+    "flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5 text-start",
+    interactive && "active:bg-muted/60 transition-colors",
+    menu ? "pe-2" : null
+  )
+
+  const row = href ? (
+    <Link href={href} className={rowClass}>
+      {body}
+    </Link>
+  ) : onClick ? (
+    <button type="button" onClick={onClick} className={cn(rowClass, "w-full")}>
+      {body}
+    </button>
+  ) : (
+    <div className={rowClass}>{body}</div>
   )
 
   return (
     <li className={className}>
-      {href ? (
-        <Link href={href} className={rowClass}>
-          {body}
-        </Link>
-      ) : onClick ? (
-        <button type="button" onClick={onClick} className={cn(rowClass, "w-full")}>
-          {body}
-        </button>
+      {menu ? (
+        <div className="flex items-center">
+          {row}
+          <div className="shrink-0 pe-3">{menu}</div>
+        </div>
       ) : (
-        <div className={rowClass}>{body}</div>
+        row
       )}
       {actions ? (
         <div className="flex flex-wrap items-center gap-2 px-4 pb-3.5 [&>*]:flex-1">{actions}</div>

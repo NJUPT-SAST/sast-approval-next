@@ -20,6 +20,10 @@ type DateTimePickerProps = {
   disabled?: boolean
   className?: string
   id?: string
+  /** 只选了日期、还没有时间时使用的时刻，如开始时间 "00:00:00"、截止时间 "23:59:59" */
+  defaultTime?: string
+  /** 校验未通过时标红 */
+  invalid?: boolean
 }
 
 /**
@@ -33,23 +37,30 @@ export function DateTimePicker({
   disabled,
   className,
   id,
+  defaultTime,
+  invalid,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false)
   const parsed = parseDateTime(value)
 
   const timeValue = parsed
     ? formatDateTime(parsed, withSeconds).slice(11)
-    : withSeconds
-      ? "00:00:00"
-      : "00:00"
+    : (defaultTime ?? "00:00:00").slice(0, withSeconds ? 8 : 5)
 
   const commit = (date: Date) => onChange(formatDateTime(date, withSeconds))
 
   const handleDateSelect = (date?: Date) => {
     if (!date) return
-    const base = parsed ?? new Date()
     const next = new Date(date)
-    next.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), 0)
+    if (parsed) {
+      next.setHours(parsed.getHours(), parsed.getMinutes(), parsed.getSeconds(), 0)
+    } else if (defaultTime) {
+      const [hours = "0", minutes = "0", seconds = "0"] = defaultTime.split(":")
+      next.setHours(Number(hours), Number(minutes), Number(seconds), 0)
+    } else {
+      const now = new Date()
+      next.setHours(now.getHours(), now.getMinutes(), 0, 0)
+    }
     commit(next)
   }
 
@@ -69,6 +80,7 @@ export function DateTimePicker({
             type="button"
             variant="outline"
             disabled={disabled}
+            aria-invalid={invalid || undefined}
             className={cn(
               "w-full justify-start pe-9 font-normal",
               !value && "text-muted-foreground"
