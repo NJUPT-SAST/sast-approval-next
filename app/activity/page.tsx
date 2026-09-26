@@ -6,37 +6,59 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PageContainer, PageHeader } from "@/components/common/page-header"
 import { DataPagination } from "@/components/common/data-pagination"
-import { EmptyState } from "@/components/common/states"
+import { EmptyState, ErrorState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
+import { readPositiveInt, useQueryParams } from "@/lib/hooks/use-query-params"
 import { CompetitionCard, CompetitionCardSkeleton } from "@/components/competition/competition-card"
 import { getAllCompetitionList, searchCompetition } from "@/lib/api/user"
 import type { CompetitionListItem } from "@/lib/types/api"
 
 const PAGE_SIZE_OPTIONS = [8, 12, 24, 48, 96]
+const DEFAULT_PAGE_SIZE = 8
 
-export default function ActivityPage() {
+const GRID_CLASS =
+  "grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-8 lg:grid-cols-3 xl:grid-cols-4"
+
+function CompetitionGridSkeleton({ count }: { count: number }) {
+  return (
+    <div className={GRID_CLASS}>
+      {Array.from({ length: count }).map((_, index) => (
+        <CompetitionCardSkeleton key={index} />
+      ))}
+    </div>
+  )
+}
+
+function ActivityContent() {
+  // 搜索词与页码放在地址栏里，从比赛详情返回时能回到原来的位置
+  const { params, setParams } = useQueryParams()
+  const submitted = params.get("q")?.trim() ?? ""
+  const page = readPositiveInt(params, "page", 1)
+  const pageSize = readPositiveInt(params, "size", DEFAULT_PAGE_SIZE)
+
   const [activities, setActivities] = React.useState<{
     records: CompetitionListItem[]
     total: number
   }>({ records: [], total: 0 })
-  const [keyword, setKeyword] = React.useState("")
-  const [submitted, setSubmitted] = React.useState("")
-  const [pageOpt, setPageOpt] = React.useState({ page: 1, pageSize: 8 })
+  const [failed, setFailed] = React.useState(false)
+  const [keyword, setKeyword] = React.useState(submitted)
   const {
     requestKey,
     loading: isLoading,
     markLoaded,
-  } = useLoadState(`${submitted}|${pageOpt.page}|${pageOpt.pageSize}`)
+    reload,
+  } = useLoadState(`${submitted}|${page}|${pageSize}`)
 
   React.useEffect(() => {
     let cancelled = false
     const request = submitted
-      ? searchCompetition(submitted, pageOpt.page, pageOpt.pageSize)
-      : getAllCompetitionList(pageOpt.page, pageOpt.pageSize)
+      ? searchCompetition(submitted, page, pageSize)
+      : getAllCompetitionList(page, pageSize)
 
     request
       .then((res) => {
         if (cancelled) return
+        setFailed(false)
         if (res.data.success && res.data.data) {
           setActivities({
             records: res.data.data.records ?? [],
@@ -47,7 +69,9 @@ export default function ActivityPage() {
         }
       })
       .catch(() => {
-        if (!cancelled) setActivities({ records: [], total: 0 })
+        if (cancelled) return
+        setFailed(true)
+        setActivities({ records: [], total: 0 })
       })
       .finally(() => {
         if (!cancelled) markLoaded(requestKey)
@@ -60,13 +84,19 @@ export default function ActivityPage() {
   }, [requestKey])
 
   const runSearch = (value: string) => {
-    setSubmitted(value.trim())
-    setPageOpt((prev) => ({ page: 1, pageSize: prev.pageSize }))
+    setParams({ q: value.trim(), page: undefined })
   }
 
   const clearSearch = () => {
     setKeyword("")
     runSearch("")
+  }
+
+  const changePage = (nextPage: number, nextSize: number) => {
+    setParams({
+      page: nextPage > 1 ? nextPage : undefined,
+      size: nextSize !== DEFAULT_PAGE_SIZE ? nextSize : undefined,
+    })
   }
 
   return (
@@ -88,7 +118,8 @@ export default function ActivityPage() {
               <Input
                 type="search"
                 enterKeyHint="search"
-                className="h-10 ps-9 pe-9 sm:h-9"
+                aria-label="搜索比赛"
+                className="h-10 ps-9 pe-9 sm:h-9 [&::-webkit-search-cancel-button]:hidden"
                 placeholder="搜索比赛名称或关键词"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
@@ -111,8 +142,8 @@ export default function ActivityPage() {
         }
       />
 
-      {submitted && !isLoading ? (
-        <p className="text-muted-foreground mt-4 text-sm">
+      {submitted && !isLoading && !failed ? (
+        <p className="text-muted-foreground mt-4 text-sm" aria-live="polite">
           「{submitted}」的搜索结果，共 {activities.total} 个
           <button
             type="button"
@@ -126,15 +157,13 @@ export default function ActivityPage() {
 
       <div className="mt-6 space-y-8">
         {isLoading ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-8 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: Math.min(pageOpt.pageSize, 8) }).map((_, index) => (
-              <CompetitionCardSkeleton key={index} />
-            ))}
-          </div>
+          <CompetitionGridSkeleton count={Math.min(pageSize, 8)} />
+        ) : failed ? (
+          <ErrorState description="比赛列表没有加载出来，请检查网络后重试。" onRetry={reload} />
         ) : activities.records.length === 0 ? (
           <EmptyState
             icon={SearchXIcon}
-            title="找不到相关比赛"
+            title={submitted ? "找不到相关比赛" : "还没有比赛"}
             description={
               submitted
                 ? "似乎找不到你想要的比赛，换个关键词再试一次吧！"
@@ -149,7 +178,7 @@ export default function ActivityPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-8 lg:grid-cols-3 xl:grid-cols-4">
+          <div className={`${GRID_CLASS} motion-safe:animate-fade-enter`}>
             {activities.records.map((item) => (
               <CompetitionCard
                 key={item.id}
@@ -163,15 +192,31 @@ export default function ActivityPage() {
           </div>
         )}
 
-        <DataPagination
-          current={pageOpt.page}
-          pageSize={pageOpt.pageSize}
-          total={activities.total ?? 0}
-          showSizeChanger
-          pageSizeOptions={PAGE_SIZE_OPTIONS}
-          onChange={(page, pageSize) => setPageOpt({ page, pageSize })}
-        />
+        {!failed ? (
+          <DataPagination
+            current={page}
+            pageSize={pageSize}
+            total={activities.total ?? 0}
+            showSizeChanger
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onChange={changePage}
+          />
+        ) : null}
       </div>
     </PageContainer>
+  )
+}
+
+export default function ActivityPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <PageContainer size="wide">
+          <CompetitionGridSkeleton count={DEFAULT_PAGE_SIZE} />
+        </PageContainer>
+      }
+    >
+      <ActivityContent />
+    </React.Suspense>
   )
 }

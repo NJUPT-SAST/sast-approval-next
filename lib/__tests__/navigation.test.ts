@@ -75,6 +75,13 @@ describe("角色路由与导航", () => {
     expect(breadcrumbNameMap("approver")["/review"]).toBe("比赛评审")
   })
 
+  it("每个侧边栏菜单都有面包屑名称，页头不会显示成上一级", () => {
+    for (const [role, items] of Object.entries(NAV_BY_ROLE)) {
+      const map = breadcrumbNameMap(role as keyof typeof NAV_BY_ROLE)
+      for (const item of items) expect(map[item.href]).toBeTruthy()
+    }
+  })
+
   it("withQuery 会忽略空值", () => {
     expect(withQuery("/review/list", { comId: 3, page: 1 })).toBe("/review/list?comId=3&page=1")
     expect(withQuery("/activity/notice", { id: 3, noticeId: undefined })).toBe(

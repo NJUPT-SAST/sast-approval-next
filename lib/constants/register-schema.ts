@@ -93,7 +93,7 @@ export function buildRegisterSchema({
       labelWidth: 151,
       displayType: "column",
       properties: {
-        leader: leaderNode("个人信息", "信息已自动填写，有误请到我的账号修改"),
+        leader: leaderNode("个人信息", "信息取自你的账号，如有误请联系管理员"),
       },
     }
   }

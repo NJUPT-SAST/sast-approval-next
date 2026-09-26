@@ -17,8 +17,9 @@ import {
 import { PageContainer, PageHeader } from "@/components/common/page-header"
 import { DataPagination } from "@/components/common/data-pagination"
 import { MobileList, MobileListItem, TableSurface } from "@/components/common/data-list"
-import { EmptyState } from "@/components/common/states"
+import { EmptyState, ErrorState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
+import { readPositiveInt, useQueryParams } from "@/lib/hooks/use-query-params"
 import { getJudgeCompetitionList, getScoreCompetitionList } from "@/lib/api/judge"
 import { withQuery } from "@/lib/navigation"
 import { useUserStore } from "@/lib/store/user"
@@ -35,18 +36,20 @@ function PendingBadge({ pending }: { pending: number }) {
   )
 }
 
-export default function ReviewPage() {
+function ReviewContent() {
   const role = useUserStore((state) => state.role)
   const isJudge = role === "judge"
   const actionLabel = isJudge ? "审核" : "评审"
 
-  const [pageNum, setPageNum] = React.useState(1)
+  const { params, setParams } = useQueryParams()
+  const pageNum = readPositiveInt(params, "page", 1)
   const [dataList, setDataList] = React.useState<{
     list: DataListType[]
     total: number
     pageSize: number
   } | null>(null)
-  const { requestKey, loading, markLoaded } = useLoadState(`${isJudge}|${pageNum}`)
+  const [failed, setFailed] = React.useState(false)
+  const { requestKey, loading, markLoaded, reload } = useLoadState(`${isJudge}|${pageNum}`)
 
   React.useEffect(() => {
     let cancelled = false
@@ -54,10 +57,13 @@ export default function ReviewPage() {
     request
       .then((res) => {
         if (cancelled) return
+        setFailed(false)
         setDataList(res.data.data ?? null)
       })
       .catch(() => {
-        if (!cancelled) setDataList(null)
+        if (cancelled) return
+        setFailed(true)
+        setDataList(null)
       })
       .finally(() => {
         if (!cancelled) markLoaded(requestKey)
@@ -86,6 +92,8 @@ export default function ReviewPage() {
               <Skeleton key={index} className="h-14 w-full rounded-lg" />
             ))}
           </div>
+        ) : failed ? (
+          <ErrorState description="比赛列表没有加载出来，请检查网络后重试。" onRetry={reload} />
         ) : dataList === null || rows.length === 0 ? (
           <EmptyState
             icon={ClipboardCheckIcon}
@@ -94,7 +102,7 @@ export default function ReviewPage() {
           />
         ) : (
           <>
-            <TableSurface className="hidden md:block">
+            <TableSurface className="motion-safe:animate-fade-enter hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -151,7 +159,7 @@ export default function ReviewPage() {
               </Table>
             </TableSurface>
 
-            <MobileList className="md:hidden">
+            <MobileList className="motion-safe:animate-fade-enter md:hidden">
               {rows.map((record) => {
                 const total = record.totalNum ?? 0
                 const completed = record.completedNum ?? 0
@@ -185,9 +193,27 @@ export default function ReviewPage() {
           current={pageNum}
           pageSize={dataList.pageSize || 10}
           total={dataList.total}
-          onChange={(page) => setPageNum(page)}
+          onChange={(page) => setParams({ page: page > 1 ? page : undefined })}
         />
       ) : null}
     </PageContainer>
+  )
+}
+
+export default function ReviewPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <PageContainer size="wide">
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={index} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
+        </PageContainer>
+      }
+    >
+      <ReviewContent />
+    </React.Suspense>
   )
 }

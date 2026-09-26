@@ -8,6 +8,8 @@ import {
   FileQuestionIcon,
   InboxIcon,
   Loader2Icon,
+  RotateCwIcon,
+  WifiOffIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -67,6 +69,39 @@ export function EmptyState({
   )
 }
 
+/**
+ * 加载失败的占位，带「重新加载」按钮。
+ * 请求失败时不要落到 EmptyState，否则用户会误以为「真的没有数据」。
+ */
+export function ErrorState({
+  title = "加载失败",
+  description = "数据没有加载出来，可能是网络不稳定，请稍后重试。",
+  onRetry,
+  className,
+}: {
+  title?: string
+  description?: string
+  onRetry?: () => void
+  className?: string
+}) {
+  return (
+    <EmptyState
+      icon={WifiOffIcon}
+      title={title}
+      description={description}
+      className={className}
+      action={
+        onRetry ? (
+          <Button variant="outline" onClick={onRetry}>
+            <RotateCwIcon className="size-4" />
+            重新加载
+          </Button>
+        ) : null
+      }
+    />
+  )
+}
+
 type ResultStatus = "success" | "error" | "404"
 
 const RESULT_META: Record<
@@ -100,7 +135,12 @@ export function ResultState({
         className
       )}
     >
-      <span className={cn("flex size-16 items-center justify-center rounded-full", meta.tone)}>
+      <span
+        className={cn(
+          "motion-safe:animate-in motion-safe:zoom-in-90 motion-safe:fade-in-0 flex size-16 items-center justify-center rounded-full duration-300 ease-out",
+          meta.tone
+        )}
+      >
         <Icon className="size-8" />
       </span>
       <div className="space-y-2">

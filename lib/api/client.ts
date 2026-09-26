@@ -8,7 +8,8 @@ import {
   markNetworkErrorNotified,
   wasNetworkErrorNotified,
 } from "@/lib/api/errors"
-import { STORAGE_KEYS, clearStorage, readStorage, writeStorage } from "@/lib/storage"
+import { STORAGE_KEYS, readStorage } from "@/lib/storage"
+import { useUserStore } from "@/lib/store/user"
 
 /**
  * 接口基地址。
@@ -31,14 +32,15 @@ apis.interceptors.request.use((config) => {
   return config
 })
 
-/** 登录失效：清空本地状态并回到登录页 */
+/**
+ * 登录失效：清空登录态。
+ * AppShell 会在当前地址直接渲染登录页，不整页跳转，重新登录后还能回到原来的页面。
+ */
 function handleUnauthorized() {
-  toast.loading("⚠️ 登录已过期，正在重定向到登录页", { id: "unlogin" })
-  clearStorage()
-  writeStorage(STORAGE_KEYS.userState, "offline")
-  if (typeof window !== "undefined") {
-    window.location.href = "/"
-  }
+  // 并发请求可能同时返回 1003，只处理第一次
+  if (useUserStore.getState().role === "offline") return
+  toast.warning("⚠️ 登录已过期", { id: "unlogin", description: "请重新登录后继续操作" })
+  useUserStore.getState().logout()
 }
 
 apis.interceptors.response.use(

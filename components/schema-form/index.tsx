@@ -141,10 +141,24 @@ export function SchemaForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schema])
 
+  const formRef = React.useRef<HTMLFormElement>(null)
+
   const handleSubmit = React.useCallback(() => {
     const nextErrors: FormError[] = []
     validate(schema, form.getValues(), "", nextErrors)
     form.setErrors(nextErrors)
+    if (nextErrors.length > 0) {
+      // 等错误提示渲染出来，再把第一个出错的字段滚到视野中并聚焦
+      window.requestAnimationFrame(() => {
+        const field = formRef.current?.querySelector<HTMLElement>("[data-field-error]")
+        if (!field) return
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        field.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" })
+        field
+          .querySelector<HTMLElement>("input:not([type=hidden]), textarea, button, [tabindex]")
+          ?.focus({ preventScroll: true })
+      })
+    }
     onFinish?.(form.getValues(), nextErrors)
   }, [form, schema, onFinish])
 
@@ -164,6 +178,7 @@ export function SchemaForm({
 
   return (
     <form
+      ref={formRef}
       className={cn("w-full space-y-5", className)}
       onSubmit={(event) => {
         event.preventDefault()
@@ -393,7 +408,7 @@ function SchemaField({ node, path, values, errorMap, setValue, widgets, disabled
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-field-error={error ? "" : undefined}>
       {node.title && node.type !== "boolean" ? (
         <Label htmlFor={id} className="text-sm font-medium">
           {node.required ? <span className="text-destructive mr-0.5">*</span> : null}
@@ -405,7 +420,7 @@ function SchemaField({ node, path, values, errorMap, setValue, widgets, disabled
       ) : null}
       {control}
       {error ? (
-        <p className="text-destructive flex items-center gap-1 text-xs">
+        <p className="text-destructive motion-safe:animate-fade-enter flex items-center gap-1 text-xs">
           <AlertCircleIcon className="size-3" />
           {error}
         </p>

@@ -10,13 +10,12 @@ import {
   UserRoundIcon,
   UsersIcon,
 } from "lucide-react"
-import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PageContainer, PageHeader } from "@/components/common/page-header"
 import { Section, SectionList, InfoRow } from "@/components/common/section"
-import { EmptyState, LoadingState } from "@/components/common/states"
+import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import {
   getCompetitionInfo,
   getCompetitionSignInfo,
@@ -24,6 +23,7 @@ import {
   getWorkInfo,
 } from "@/lib/api/user"
 import { downloadCertifiedFile } from "@/lib/file"
+import { useLoadState } from "@/lib/hooks/use-load-state"
 import { withQuery } from "@/lib/navigation"
 import { useUiStore } from "@/lib/store/ui"
 import { isFuture, isPast } from "@/lib/datetime"
@@ -69,11 +69,14 @@ function RegisterDetailContent() {
   const id = Number(params.get("id"))
   const setPageLabel = useUiStore((state) => state.setPageLabel)
 
-  const [isLoading, setIsLoading] = React.useState(true)
+  const { requestKey, loading: isLoading, markLoaded, reload } = useLoadState(String(id))
+  const [loadFailed, setLoadFailed] = React.useState(false)
   const [competitionName, setCompetitionName] = React.useState("")
   const [isTeam, setIsTeam] = React.useState(true)
+  const [regClosed, setRegClosed] = React.useState(false)
   const [beforeSubmitTime, setBeforeSubmitTime] = React.useState(false)
   const [afterSubmitTime, setAfterSubmitTime] = React.useState(false)
+  const [submitBegin, setSubmitBegin] = React.useState("")
   const [teamInfo, setTeamInfo] = React.useState<TeamInfo>({
     teamName: "",
     teamMember: [],
@@ -86,21 +89,17 @@ function RegisterDetailContent() {
     let cancelled = false
 
     const run = async () => {
-      setIsLoading(true)
-      toast.loading("🤔 正在获取已保存信息，请稍候", { id: "loading" })
       try {
         const detailRes = await getCompetitionInfo(id)
         if (cancelled) return
         const detail = detailRes.data.data
-        let before = false
-        let after = false
         if (detail) {
           setCompetitionName(detail.name)
           setPageLabel(detail.name)
-          before = isFuture(detail.submitBegin)
-          after = isPast(detail.submitEnd)
-          setBeforeSubmitTime(before)
-          setAfterSubmitTime(after)
+          setRegClosed(isPast(detail.regEnd))
+          setBeforeSubmitTime(isFuture(detail.submitBegin))
+          setAfterSubmitTime(isPast(detail.submitEnd))
+          setSubmitBegin(detail.submitBegin ?? "")
         }
 
         const signRes = await getCompetitionSignInfo(id)
@@ -109,47 +108,36 @@ function RegisterDetailContent() {
 
         const teamRes = await getTeamInfo(id)
         if (cancelled) return
-        if (teamRes.data.errCode !== 2003 && teamRes.data.data) {
+        if (teamRes.data.errMsg === "您还未报名该比赛") {
+          // 还没报名就没有详情可看，直接换成报名页，不留历史记录
+          router.replace(withQuery("/activity/register", { id }))
+          return
+        }
+        if (teamRes.data.data) {
           setTeamInfo({
             teamName: teamRes.data.data.teamName ?? "",
             teamMember: teamRes.data.data.teamMember ?? [],
             teacherMember: teamRes.data.data.teacherMember ?? [],
           })
-          toast.success("😸 信息加载成功", { id: "loading" })
-        } else if (teamRes.data.errMsg === "您还未报名该比赛") {
-          toast.dismiss("loading")
-          router.replace(withQuery("/activity/register", { id }))
-          return
-        } else {
-          toast.error("🙀 信息加载错误，请联系管理员", { id: "loading" })
         }
 
         const workRes = await getWorkInfo(id)
         if (cancelled) return
         setWorkData(workRes.data.data ?? null)
-        if (workRes.data.errMsg === "您还未上传作品" && !before && !after) {
-          toast.warning("您还未上传项目", {
-            id: "no-item",
-            description: "请记得提交您的项目哦，否则无法正常参赛",
-            duration: 8000,
-            action: {
-              label: "马上前往",
-              onClick: () => router.push(withQuery("/activity/work-detail", { id })),
-            },
-          })
-        }
+        setLoadFailed(false)
       } catch {
-        if (!cancelled) toast.error("🙀 信息加载错误，请联系管理员", { id: "loading" })
+        if (!cancelled) setLoadFailed(true)
       } finally {
-        if (!cancelled) setIsLoading(false)
+        if (!cancelled) markLoaded(requestKey)
       }
     }
 
-    run()
+    void run()
     return () => {
       cancelled = true
     }
-  }, [id, router, setPageLabel])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestKey])
 
   if (!id) {
     return (
@@ -159,6 +147,19 @@ function RegisterDetailContent() {
     )
   }
 
+  if (!isLoading && loadFailed) {
+    return (
+      <PageContainer size="narrow">
+        <ErrorState
+          className="min-h-[50vh]"
+          description="报名详情没有加载出来，请检查网络后重试。"
+          onRetry={reload}
+        />
+      </PageContainer>
+    )
+  }
+
+  const goSubmitWork = () => router.push(withQuery("/activity/work-detail", { id }))
   const captain = teamInfo.teamMember[0]
   const members = teamInfo.teamMember.slice(1)
   const hasWork = Boolean(workData && workData.length > 0)
@@ -183,16 +184,19 @@ function RegisterDetailContent() {
         <Section
           title={isTeam ? "队伍信息" : "报名信息"}
           icon={UsersIcon}
+          description={regClosed ? "报名已截止，报名信息不能再修改。" : undefined}
           actions={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isLoading}
-              onClick={() => router.push(withQuery("/activity/register", { id }))}
-            >
-              <PencilIcon className="size-3.5" />
-              修改
-            </Button>
+            regClosed ? null : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading}
+                onClick={() => router.push(withQuery("/activity/register", { id }))}
+              >
+                <PencilIcon className="size-3.5" />
+                修改
+              </Button>
+            )
           }
         >
           {isLoading ? (
@@ -265,7 +269,7 @@ function RegisterDetailContent() {
                 size="sm"
                 variant={hasWork ? "outline" : "default"}
                 disabled={isLoading || afterSubmitTime}
-                onClick={() => router.push(withQuery("/activity/work-detail", { id }))}
+                onClick={goSubmitWork}
               >
                 <PencilIcon className="size-3.5" />
                 {hasWork ? "修改" : "去提交"}
@@ -278,18 +282,34 @@ function RegisterDetailContent() {
           ) : !hasWork || beforeSubmitTime ? (
             <EmptyState
               icon={beforeSubmitTime ? GraduationCapIcon : FileTextIcon}
-              title={beforeSubmitTime ? "还没到项目提交时间" : "还没提交过项目"}
+              title={
+                beforeSubmitTime
+                  ? "还没到项目提交时间"
+                  : afterSubmitTime
+                    ? "没有提交项目"
+                    : "还没提交过项目"
+              }
               description={
                 beforeSubmitTime
-                  ? "请留意比赛详情页中的时间安排。"
+                  ? submitBegin
+                    ? `项目提交将于 ${submitBegin} 开始。`
+                    : "请留意比赛详情页中的时间安排。"
                   : afterSubmitTime
-                    ? "提交时间已结束。"
-                    : "点击右上角「去提交」填写并上传你的项目材料。"
+                    ? "项目提交时间已结束。"
+                    : "提交截止前记得上传项目材料，否则无法正常参赛。"
+              }
+              action={
+                !beforeSubmitTime && !afterSubmitTime ? (
+                  <Button onClick={goSubmitWork}>
+                    <PencilIcon className="size-4" />
+                    去提交项目
+                  </Button>
+                ) : null
               }
               className="min-h-36 rounded-xl border border-dashed"
             />
           ) : (
-            <dl className="divide-y">
+            <dl className="motion-safe:animate-fade-enter divide-y">
               {workData!.map((item, index) => (
                 <InfoRow key={`${item.input}-${index}`} label={item.input}>
                   {item.isFile ? (

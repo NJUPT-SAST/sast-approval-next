@@ -19,6 +19,7 @@ import { CoverUploader } from "@/components/competition/cover-uploader"
 import { ReviewerSet } from "@/components/competition/reviewer-set"
 import { TimeRangeField } from "@/components/competition/time-range-field"
 import { option } from "@/lib/constants/form-templates"
+import type { ReviewSetting } from "@/lib/competition-validation"
 import { useDepartments } from "@/lib/hooks/use-departments"
 import { cn } from "@/lib/utils"
 import type { CompetitionInfoType } from "@/lib/types/api"
@@ -26,7 +27,7 @@ import type { CompetitionInfoType } from "@/lib/types/api"
 /** 团队比赛人数上限可选值（最多 15 人） */
 const TEAM_MEMBER_NUM_ARRAY = Array.from({ length: 14 }, (_, index) => String(index + 2))
 
-export type ReviewSetting = { key: number; value: string }
+export type { ReviewSetting }
 
 type CompetitionFormProps = {
   info: CompetitionInfoType
@@ -46,6 +47,8 @@ type CompetitionFormProps = {
   setStartTime: (time: string, operation: string) => void
   setEndTime: (time: string, operation: string) => void
   disabled?: boolean
+  /** 校验未通过的控件 id（来自 validateCompetition），对应控件会标红 */
+  invalidField?: string | null
 }
 
 function RequiredMark() {
@@ -73,7 +76,9 @@ export function CompetitionForm({
   setStartTime,
   setEndTime,
   disabled,
+  invalidField,
 }: CompetitionFormProps) {
+  const invalid = (field: string) => invalidField === field || undefined
   const introduceLength = info.introduce?.length ?? 0
   const introduceShort = introduceLength > 0 && introduceLength < 100
   // 在此统一拉取，ReviewerSet 会渲染多份，hook 内的模块级缓存保证只发一次请求
@@ -104,6 +109,7 @@ export function CompetitionForm({
                 placeholder="清晰简洁，不多于 15 字"
                 value={info.name}
                 disabled={disabled}
+                aria-invalid={invalid("competition-name")}
                 className="pe-14"
                 onChange={(event) => onInfoChange({ name: event.target.value })}
               />
@@ -187,6 +193,7 @@ export function CompetitionForm({
               placeholder="介绍比赛背景、参赛要求与奖项设置，建议不少于 100 字"
               value={info.introduce}
               disabled={disabled}
+              aria-invalid={invalid("competition-introduce")}
               onChange={(event) => onInfoChange({ introduce: event.target.value })}
             />
             <p
@@ -229,6 +236,7 @@ export function CompetitionForm({
         <div className="space-y-6">
           <TimeRangeField
             operation="signUp"
+            invalidField={invalidField}
             preStartTime={info.reg_begin_time}
             preEndTime={info.reg_end_time}
             setStartTime={setStartTime}
@@ -237,6 +245,7 @@ export function CompetitionForm({
           />
           <TimeRangeField
             operation="submit"
+            invalidField={invalidField}
             preStartTime={info.submit_begin_time}
             preEndTime={info.submit_end_time}
             setStartTime={setStartTime}
@@ -245,6 +254,7 @@ export function CompetitionForm({
           />
           <TimeRangeField
             operation="review"
+            invalidField={invalidField}
             preStartTime={info.review_begin_time}
             preEndTime={info.review_end_time}
             setStartTime={setStartTime}
@@ -268,6 +278,7 @@ export function CompetitionForm({
                 placeholder="审核者学号"
                 value={reviewSettings[0]?.value ?? ""}
                 disabled={disabled}
+                aria-invalid={invalid("default-reviewer")}
                 onChange={(event) => setReviewerValue(0, event.target.value)}
               />
               <p className="text-muted-foreground text-xs">
@@ -295,6 +306,7 @@ export function CompetitionForm({
                       disabled={disabled}
                       departments={departments}
                       departmentsLoading={departmentsLoading}
+                      invalidField={invalidField}
                     />
                   )
                 )}

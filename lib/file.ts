@@ -96,6 +96,31 @@ export async function downloadCertifiedFile(url: string) {
   }
 }
 
+/**
+ * 用预签名地址把文件 PUT 到对象存储，并回报真实的上传进度。
+ * fetch 拿不到上传进度，大文件只能干等，所以这里用 XMLHttpRequest。
+ * 网络中断时抛出 TypeError，与 fetch 的行为一致，便于 notifyRequestError 识别。
+ */
+export function putFileWithProgress(
+  url: string,
+  file: Blob,
+  onProgress?: (percent: number) => void
+) {
+  return new Promise<{ ok: boolean; status: number }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("PUT", url)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress?.(Math.round((event.loaded / event.total) * 100))
+      }
+    }
+    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status })
+    xhr.onerror = () => reject(new TypeError("Network request failed"))
+    xhr.ontimeout = () => reject(new TypeError("Network request timed out"))
+    xhr.send(file)
+  })
+}
+
 /** 人类可读的文件大小 */
 export function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`

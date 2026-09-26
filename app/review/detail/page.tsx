@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  CalendarClockIcon,
   CheckIcon,
   DownloadIcon,
   FileTextIcon,
@@ -14,26 +15,33 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { notifyRequestError } from "@/lib/api/errors"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { PageContainer, PageHeader } from "@/components/common/page-header"
+import { MobileActionBar, PageContainer, PageHeader } from "@/components/common/page-header"
 import { Section, SectionList, InfoRow } from "@/components/common/section"
-import { EmptyState, LoadingState } from "@/components/common/states"
+import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import {
   getJudgeWorkInfo,
+  getJudgeWorkList,
   getScoreWork,
+  getScoreWorkList,
   uploadWorkJudgeInfo,
   uploadWorkScoreInfo,
 } from "@/lib/api/judge"
+import { getCompetitionInfo } from "@/lib/api/user"
+import { isPast } from "@/lib/datetime"
 import { downloadCertifiedFile } from "@/lib/file"
+import { withQuery } from "@/lib/navigation"
+import { STORAGE_KEYS, readStorage } from "@/lib/storage"
 import { useUiStore } from "@/lib/store/ui"
 import { useUserStore } from "@/lib/store/user"
 import { cn } from "@/lib/utils"
-import type { ProgramInfo } from "@/lib/types/judge"
+import type { ProgramInfo, ProgramListItem } from "@/lib/types/judge"
 
 const EMPTY_INFO: ProgramInfo = {
   title: "",
@@ -120,24 +128,39 @@ function AccessoriesSection({ accessories }: { accessories: ProgramInfo["accesso
   )
 }
 
-function ReviewDetailContent() {
+/** 评分合法区间。列表页把 0 分视为「未评分」，所以下限是 1 */
+const MIN_SCORE = 1
+const MAX_SCORE = 100
+
+/** 提交后找下一个待处理项目时最多往后翻几页 */
+const MAX_SCAN_PAGES = 20
+
+function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; page: number }) {
   const router = useRouter()
-  const params = useSearchParams()
-  const id = Number(params.get("id"))
   const role = useUserStore((state) => state.role)
   const isApprover = role === "approver"
   const actionLabel = isApprover ? "评审" : "审核"
   const setPageLabel = useUiStore((state) => state.setPageLabel)
 
   const [dataList, setDataList] = React.useState<ProgramInfo>(EMPTY_INFO)
-  const { requestKey, loading, markLoaded } = useLoadState(`${id}|${isApprover}`)
+  const { requestKey, loading, markLoaded, reload } = useLoadState(`${id}|${isApprover}`)
+  const [failed, setFailed] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
+  const [competitionName, setCompetitionName] = React.useState("")
+  // 没有比赛 id（直接打开链接）时，退回列表页写入的截止时间
+  const [reviewEnd, setReviewEnd] = React.useState(() =>
+    comId ? "" : (readStorage(STORAGE_KEYS.reviewEnd) ?? "")
+  )
+  const ended = isPast(reviewEnd)
 
   // 评委表单
   const [score, setScore] = React.useState<string>("")
   const [opinion, setOpinion] = React.useState<string>("")
   // 审核表单
   const [isPass, setIsPass] = React.useState<boolean | null>(null)
+  const [triedSubmit, setTriedSubmit] = React.useState(false)
+
+  const listHref = comId ? withQuery("/review/list", { comId, page }) : "/review"
 
   React.useEffect(() => {
     if (!id) return
@@ -149,8 +172,8 @@ function ReviewDetailContent() {
         if (cancelled) return
         const result = res.data.data
         if (!result) {
-          toast.info("页面加载失败", { description: "此页面无数据" })
-          router.push("/review")
+          toast.info("没有找到这个项目", { description: "可能已被移除，已返回项目列表" })
+          router.replace(listHref)
           return
         }
         if (result.captain) {
@@ -163,15 +186,21 @@ function ReviewDetailContent() {
               index === 0 ? (isApprover ? "负责人" : "队长") : isApprover ? "团队成员" : "队员",
           })
         )
+        setFailed(false)
         setDataList({ ...EMPTY_INFO, ...result })
         setPageLabel(result.title || result.teamName || null)
+        // 已经给过结论的项目，把原结论带出来，方便核对或修改
         if (isApprover) {
           if (result.score !== null && result.score !== undefined) setScore(String(result.score))
-          if (result.opinion) setOpinion(result.opinion)
+        } else if (typeof result.isPass === "boolean") {
+          setIsPass(result.isPass)
         }
+        if (result.opinion) setOpinion(result.opinion)
       })
       .catch((error) => {
-        if (!cancelled) notifyRequestError(error, "😭 数据加载失败，请稍后重试")
+        if (cancelled) return
+        setFailed(true)
+        notifyRequestError(error, "😭 数据加载失败，请稍后重试")
       })
       .finally(() => {
         if (!cancelled) markLoaded(requestKey)
@@ -183,24 +212,89 @@ function ReviewDetailContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey])
 
+  // 比赛名与截止时间：用于眉题与「已截止」只读判断
+  React.useEffect(() => {
+    if (!comId) return
+    let cancelled = false
+    getCompetitionInfo(comId)
+      .then((res) => {
+        if (cancelled || !res.data.data) return
+        setCompetitionName(res.data.data.name ?? "")
+        setReviewEnd(res.data.data.reviewEnd ?? "")
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [comId])
+
+  /** 提交成功后进入同一页里的下一个待处理项目，没有了就回到列表 */
+  const goNext = async () => {
+    if (!comId) {
+      toast.success("✅ 提交成功")
+      router.replace("/review")
+      return
+    }
+    // 从当前页往后找第一个还没处理的项目，最多翻 MAX_SCAN_PAGES 页
+    try {
+      for (let cursor = page; cursor < page + MAX_SCAN_PAGES; cursor += 1) {
+        const res = isApprover
+          ? await getScoreWorkList(comId, cursor)
+          : await getJudgeWorkList(comId, cursor)
+        const result = res.data.data
+        const list: ProgramListItem[] = result?.list ?? []
+        const next = list.find(
+          (item) =>
+            item.id !== id &&
+            (isApprover ? !item.score : item.isPass !== true && item.isPass !== false)
+        )
+        if (next) {
+          toast.success("✅ 提交成功，已进入下一个项目", {
+            action: {
+              label: "返回列表",
+              onClick: () => router.push(withQuery("/review/list", { comId, page: cursor })),
+            },
+          })
+          router.replace(withQuery("/review/detail", { id: next.id, comId, page: cursor }))
+          return
+        }
+        const totalPages = Math.ceil((result?.total ?? 0) / Math.max(1, result?.pageSize ?? 10))
+        if (list.length === 0 || cursor >= totalPages) break
+      }
+    } catch {
+      // 取不到列表就直接回列表页，列表页会重新加载最新状态
+    }
+    toast.success("✅ 提交成功", { description: `全部项目都已${actionLabel}完成` })
+    router.replace(listHref)
+  }
+
+  const scrollToConclusion = () => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    document
+      .getElementById("review-conclusion")
+      ?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" })
+  }
+
   /** 评委提交评分 */
   const submitScore = async () => {
+    setTriedSubmit(true)
     const numeric = Number(score)
-    if (score === "" || Number.isNaN(numeric) || numeric <= 0 || numeric > 100) {
-      toast.error("✗ 提交失败", { description: "请输入 0-100 之间的数字" })
+    if (score === "" || Number.isNaN(numeric) || numeric < MIN_SCORE || numeric > MAX_SCORE) {
+      toast.error("✗ 还不能提交", { description: `请输入 ${MIN_SCORE}-${MAX_SCORE} 之间的分数` })
+      scrollToConclusion()
+      document.getElementById("review-score")?.focus({ preventScroll: true })
       return
     }
     setSubmitting(true)
     try {
       const res = await uploadWorkScoreInfo(id, numeric, opinion)
       if (res.data?.success) {
-        toast.success("✅ 提交成功", { description: "自动返回列表" })
-        router.back()
+        await goNext()
       } else {
         toast.error("😭 提交失败", { description: res.data?.errMsg ?? "请稍后重试" })
       }
-    } catch {
-      toast.error("😭 提交失败，请稍后重试")
+    } catch (error) {
+      notifyRequestError(error, "😭 提交失败，请稍后重试")
     } finally {
       setSubmitting(false)
     }
@@ -208,25 +302,28 @@ function ReviewDetailContent() {
 
   /** 审核人提交审核结论 */
   const submitJudge = async () => {
+    setTriedSubmit(true)
     if (isPass === null) {
-      toast.error("✗ 提交失败", { description: "请先选择审核结果" })
+      toast.error("✗ 还不能提交", { description: "请先选择审核结果" })
+      scrollToConclusion()
       return
     }
     if (!isPass && opinion.trim() === "") {
-      toast.error("✗ 提交失败", { description: "意见不能为空" })
+      toast.error("✗ 还不能提交", { description: "未通过时需要填写意见" })
+      scrollToConclusion()
+      document.getElementById("review-opinion")?.focus({ preventScroll: true })
       return
     }
     setSubmitting(true)
     try {
       const res = await uploadWorkJudgeInfo(id, isPass, opinion)
       if (res.data?.success) {
-        toast.success("✅ 提交成功", { description: "自动返回列表" })
-        router.back()
+        await goNext()
       } else {
         toast.error("😭 提交失败", { description: res.data?.errMsg ?? "请稍后重试" })
       }
-    } catch {
-      toast.error("😭 提交失败，请稍后重试")
+    } catch (error) {
+      notifyRequestError(error, "😭 提交失败，请稍后重试")
     } finally {
       setSubmitting(false)
     }
@@ -242,16 +339,58 @@ function ReviewDetailContent() {
 
   if (loading) return <LoadingState label="正在加载项目信息……" className="min-h-[60vh]" />
 
+  if (failed) {
+    return (
+      <PageContainer>
+        <ErrorState
+          className="min-h-[50vh]"
+          description="项目信息没有加载出来，请检查网络后重试。"
+          onRetry={reload}
+        />
+      </PageContainer>
+    )
+  }
+
   const scoreNumber = Number(score)
   const scoreInvalid =
-    score !== "" && (Number.isNaN(scoreNumber) || scoreNumber <= 0 || scoreNumber > 100)
+    (score !== "" || triedSubmit) &&
+    (score === "" ||
+      Number.isNaN(scoreNumber) ||
+      scoreNumber < MIN_SCORE ||
+      scoreNumber > MAX_SCORE)
+  const opinionMissing = triedSubmit && !isApprover && isPass === false && opinion.trim() === ""
+  const locked = submitting || ended
+
+  const submitButton = (
+    <Button
+      size="lg"
+      className="w-full"
+      onClick={isApprover ? submitScore : submitJudge}
+      disabled={locked}
+    >
+      {submitting ? (
+        <Loader2Icon className="size-4 animate-spin" />
+      ) : (
+        <SendIcon className="size-4" />
+      )}
+      提交{actionLabel}结果
+    </Button>
+  )
 
   return (
     <PageContainer size="wide">
       <PageHeader
-        eyebrow={isApprover && dataList.teamName ? `队伍：${dataList.teamName}` : undefined}
+        eyebrow={
+          [competitionName, isApprover && dataList.teamName ? `队伍：${dataList.teamName}` : ""]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
         title={dataList.title || dataList.teamName || `项目${actionLabel}`}
-        description={`查看项目材料并给出${actionLabel}结论。`}
+        description={
+          ended
+            ? `${actionLabel}已截止，当前为只读查看。`
+            : `查看项目材料并给出${actionLabel}结论。`
+        }
       />
 
       <div className="mt-8 grid gap-10 xl:grid-cols-[minmax(0,1fr)_380px] xl:gap-14">
@@ -273,13 +412,24 @@ function ReviewDetailContent() {
         {/* 结论面板 */}
         <aside className="xl:border-s xl:ps-10">
           <div className="xl:sticky xl:top-24">
-            <div className="border-t pt-8 xl:border-t-0 xl:pt-0">
+            <div
+              id="review-conclusion"
+              className="scroll-mt-24 border-t pt-8 xl:border-t-0 xl:pt-0"
+            >
               <h2 className="text-base font-semibold tracking-tight">{actionLabel}结论</h2>
               <p className="text-muted-foreground mt-1 text-sm">
                 {isApprover
-                  ? "请给出 0-100 的分数，并填写评语。"
+                  ? `请给出 ${MIN_SCORE}-${MAX_SCORE} 的分数，评语可选。`
                   : "请选择是否通过，未通过时必须填写意见。"}
               </p>
+
+              {ended ? (
+                <Alert className="mt-4">
+                  <CalendarClockIcon />
+                  <AlertTitle>{actionLabel}已截止</AlertTitle>
+                  <AlertDescription>截止时间 {reviewEnd}，结论不能再提交或修改。</AlertDescription>
+                </Alert>
+              ) : null}
 
               <div className="mt-6 space-y-6">
                 {isApprover ? (
@@ -291,12 +441,12 @@ function ReviewDetailContent() {
                       <Input
                         id="review-score"
                         type="number"
-                        min={0}
-                        max={100}
-                        inputMode="numeric"
-                        placeholder="0 – 100"
+                        min={MIN_SCORE}
+                        max={MAX_SCORE}
+                        inputMode="decimal"
+                        placeholder={`${MIN_SCORE} – ${MAX_SCORE}`}
                         value={score}
-                        disabled={submitting}
+                        disabled={locked}
                         aria-invalid={scoreInvalid}
                         className="h-11 pe-14 font-mono text-lg"
                         onChange={(event) => setScore(event.target.value)}
@@ -306,7 +456,9 @@ function ReviewDetailContent() {
                       </span>
                     </div>
                     {scoreInvalid ? (
-                      <p className="text-destructive text-xs">请输入 0-100 之间的数字</p>
+                      <p className="text-destructive motion-safe:animate-fade-enter text-xs">
+                        请输入 {MIN_SCORE}-{MAX_SCORE} 之间的分数
+                      </p>
                     ) : null}
                   </div>
                 ) : (
@@ -326,7 +478,7 @@ function ReviewDetailContent() {
                             type="button"
                             role="radio"
                             aria-checked={selected}
-                            disabled={submitting}
+                            disabled={locked}
                             onClick={() => setIsPass(option.value)}
                             className={cn(
                               "flex h-12 items-center justify-center gap-2 rounded-lg border text-sm font-medium transition-colors",
@@ -362,37 +514,51 @@ function ReviewDetailContent() {
                     rows={6}
                     placeholder={isApprover ? "请输入评语（可选）" : "未通过时请说明原因"}
                     value={opinion}
-                    disabled={submitting}
+                    disabled={locked}
+                    aria-invalid={opinionMissing}
                     onChange={(event) => setOpinion(event.target.value)}
                   />
+                  {opinionMissing ? (
+                    <p className="text-destructive motion-safe:animate-fade-enter text-xs">
+                      未通过时需要填写意见
+                    </p>
+                  ) : null}
                 </div>
 
-                <Button
-                  size="lg"
-                  className="w-full"
-                  onClick={isApprover ? submitScore : submitJudge}
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <Loader2Icon className="size-4 animate-spin" />
-                  ) : (
-                    <SendIcon className="size-4" />
-                  )}
-                  提交{actionLabel}结果
-                </Button>
+                {ended ? null : (
+                  <div className="hidden sm:block">
+                    {submitButton}
+                    {comId ? (
+                      <p className="text-muted-foreground mt-2 text-center text-xs">
+                        提交后自动进入下一个待{actionLabel}的项目
+                      </p>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </aside>
       </div>
+
+      {ended ? null : <MobileActionBar>{submitButton}</MobileActionBar>}
     </PageContainer>
   )
+}
+
+/** 读取查询参数，并以项目 id 为 key 渲染内容：切换到下一个项目时表单状态随之重置 */
+function ReviewDetailRoute() {
+  const params = useSearchParams()
+  const id = Number(params.get("id"))
+  const comId = Number(params.get("comId")) || 0
+  const page = Number(params.get("page")) || 1
+  return <ReviewDetailContent key={id} id={id} comId={comId} page={page} />
 }
 
 export default function ReviewDetailPage() {
   return (
     <React.Suspense fallback={<LoadingState className="min-h-[60vh]" />}>
-      <ReviewDetailContent />
+      <ReviewDetailRoute />
     </React.Suspense>
   )
 }

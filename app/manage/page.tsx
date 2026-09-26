@@ -35,8 +35,9 @@ import {
 import { PageContainer, PageHeader } from "@/components/common/page-header"
 import { DataPagination } from "@/components/common/data-pagination"
 import { MobileList, MobileListItem, TableSurface } from "@/components/common/data-list"
-import { EmptyState } from "@/components/common/states"
+import { EmptyState, ErrorState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
+import { readPositiveInt, useQueryParams } from "@/lib/hooks/use-query-params"
 import { exportWorkFileDataToAssignScorer, getCompetitionList } from "@/lib/api/admin"
 import { saveBlobResponse } from "@/lib/file"
 import { withQuery } from "@/lib/navigation"
@@ -121,28 +122,31 @@ function RowMenu({
   )
 }
 
-export default function ManagePage() {
-  const [pageState, setPageState] = React.useState({ pageNumber: 1, pageSize: 9, total: 0 })
+const PAGE_SIZE = 9
+
+function ManageContent() {
+  // 页码放在地址栏，从比赛管理详情返回时回到原来的页
+  const { params, setParams } = useQueryParams()
+  const pageNumber = readPositiveInt(params, "page", 1)
+  const [total, setTotal] = React.useState(0)
   const [records, setRecords] = React.useState<ManageCompetitionItem[]>([])
-  const {
-    requestKey,
-    loading: isLoading,
-    markLoaded,
-  } = useLoadState(`${pageState.pageNumber}|${pageState.pageSize}`)
+  const [failed, setFailed] = React.useState(false)
+  const { requestKey, loading: isLoading, markLoaded, reload } = useLoadState(String(pageNumber))
 
   React.useEffect(() => {
     let cancelled = false
-    getCompetitionList(pageState.pageNumber, pageState.pageSize)
+    getCompetitionList(pageNumber, PAGE_SIZE)
       .then((res) => {
         if (cancelled) return
+        setFailed(false)
         setRecords(res.data.data?.records ?? [])
-        setPageState((prev) => ({ ...prev, total: res.data.data?.total ?? 0 }))
+        setTotal(res.data.data?.total ?? 0)
       })
       .catch((error) => {
-        if (!cancelled) {
-          setRecords([])
-          notifyRequestError(error, "😭 请求失败", { description: "比赛列表加载失败，请稍后重试" })
-        }
+        if (cancelled) return
+        setFailed(true)
+        setRecords([])
+        notifyRequestError(error, "😭 请求失败", { description: "比赛列表加载失败，请稍后重试" })
       })
       .finally(() => {
         if (!cancelled) markLoaded(requestKey)
@@ -203,12 +207,14 @@ export default function ManagePage() {
               <Skeleton key={index} className="h-14 w-full rounded-lg" />
             ))}
           </div>
+        ) : failed ? (
+          <ErrorState description="比赛列表没有加载出来，请检查网络后重试。" onRetry={reload} />
         ) : records.length === 0 ? (
           empty
         ) : (
           <>
             {/* 桌面表格 */}
-            <TableSurface className="hidden md:block">
+            <TableSurface className="motion-safe:animate-fade-enter hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -273,7 +279,7 @@ export default function ManagePage() {
             </TableSurface>
 
             {/* 手机列表 */}
-            <MobileList className="md:hidden">
+            <MobileList className="motion-safe:animate-fade-enter md:hidden">
               {records.map((item) => (
                 <MobileListItem
                   key={item.id}
@@ -287,14 +293,8 @@ export default function ManagePage() {
                       <Counters item={item} compact />
                     </>
                   }
-                  trailing={
-                    <>
-                      <StatusBadge status={item.status} />
-                      <span onClick={(event) => event.preventDefault()}>
-                        <RowMenu item={item} onExport={handleExport} />
-                      </span>
-                    </>
-                  }
+                  trailing={<StatusBadge status={item.status} />}
+                  menu={<RowMenu item={item} onExport={handleExport} />}
                 />
               ))}
             </MobileList>
@@ -302,13 +302,33 @@ export default function ManagePage() {
         )}
       </div>
 
-      <DataPagination
-        className="mt-6"
-        current={pageState.pageNumber}
-        pageSize={pageState.pageSize}
-        total={pageState.total}
-        onChange={(page) => setPageState((prev) => ({ ...prev, pageNumber: page }))}
-      />
+      {!failed ? (
+        <DataPagination
+          className="mt-6"
+          current={pageNumber}
+          pageSize={PAGE_SIZE}
+          total={total}
+          onChange={(page) => setParams({ page: page > 1 ? page : undefined })}
+        />
+      ) : null}
     </PageContainer>
+  )
+}
+
+export default function ManagePage() {
+  return (
+    <React.Suspense
+      fallback={
+        <PageContainer size="wide">
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
+        </PageContainer>
+      }
+    >
+      <ManageContent />
+    </React.Suspense>
   )
 }

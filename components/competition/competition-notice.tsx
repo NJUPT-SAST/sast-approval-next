@@ -67,7 +67,7 @@ export function CompetitionNotice({
         />
       </CollapsibleTrigger>
 
-      <CollapsibleContent>
+      <CollapsibleContent className="motion-safe:data-[state=closed]:animate-collapsible-up motion-safe:data-[state=open]:animate-collapsible-down overflow-hidden">
         <div className="space-y-4 pt-1 pb-4 ps-4.5">
           <p className="text-foreground text-balance-pretty text-sm leading-relaxed whitespace-pre-wrap">
             {content}

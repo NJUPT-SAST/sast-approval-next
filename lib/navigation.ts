@@ -39,6 +39,30 @@ export const NAV_BY_ROLE: Record<Exclude<UserRole, "offline">, NavItem[]> = {
   ],
 }
 
+/** 「我的账号」常用入口里每个菜单项的一句话说明，按角色区分措辞 */
+export function navItemHint(role: UserRole, href: string): string {
+  switch (href) {
+    case "/inbox":
+      return "查看系统通知与站内信"
+    case "/activity":
+      return role === "user" ? "浏览比赛、报名并提交项目材料" : "浏览全部比赛的介绍、公告与时间安排"
+    case "/manage":
+      return "创建、编辑比赛，分配评委并导出数据"
+    case "/manage/judge":
+      return "新增、编辑评委账号，或从 Excel 批量导入"
+    case "/manage/student":
+      return "新增、编辑学生账号，或从 Excel 批量导入"
+    case "/review":
+      return role === "judge" ? "审核分配给你的参赛项目" : "为分配给你的参赛项目打分"
+    case "/review/student":
+      return "从 Excel 批量导入学生账号"
+    case "/import":
+      return "从 Excel 批量创建账号并导出初始密码"
+    default:
+      return ""
+  }
+}
+
 /** 每个角色可访问的路由白名单，未命中渲染 404，行为等价于旧版按角色注册路由表 */
 const ROUTES_BY_ROLE: Record<Exclude<UserRole, "offline">, string[]> = {
   admin: [
@@ -136,6 +160,7 @@ export function breadcrumbNameMap(role: UserRole): Record<string, string> {
     "/review": reviewValue,
     "/review/list": "项目列表",
     "/review/detail": role === "approver" ? "比赛审批" : "比赛评审",
+    "/review/student": "学生管理",
     "/activity/detail": "比赛详情",
     "/activity/register": "比赛报名",
     "/activity/register-detail": "报名参加详情",

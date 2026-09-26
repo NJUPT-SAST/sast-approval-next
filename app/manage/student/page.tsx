@@ -1,8 +1,9 @@
 "use client"
 
+import * as React from "react"
 import { UserRoundIcon } from "lucide-react"
+import { LoadingState } from "@/components/common/states"
 import AccountManager from "@/components/manage/account-manager"
-import type { AccountManagerProps } from "@/components/manage/account-manager"
 import {
   createStudentAccount,
   deleteStudentAccount,
@@ -12,17 +13,19 @@ import {
 import { importAccountsFromExcel } from "@/lib/api/judge"
 
 export default function ManageStudentPage() {
-  const managerProps: AccountManagerProps = {
-    title: "学生管理",
-    description: "管理学生账号，直接在网页上新增、编辑、删除，也可导入 Excel。",
-    entity: "学生",
-    emptyIcon: UserRoundIcon,
-    listAccounts: getStudentAccountList,
-    createAccount: createStudentAccount,
-    editAccount: editStudentAccount,
-    deleteAccount: deleteStudentAccount,
-    importAccount: importAccountsFromExcel,
-  }
-
-  return <AccountManager {...managerProps} />
+  return (
+    <React.Suspense fallback={<LoadingState className="min-h-[60vh]" />}>
+      <AccountManager
+        title="学生管理"
+        description="管理学生账号，可在网页上逐个新增、编辑、删除，也可从 Excel 批量导入。"
+        entity="学生"
+        emptyIcon={UserRoundIcon}
+        listAccounts={getStudentAccountList}
+        createAccount={createStudentAccount}
+        editAccount={editStudentAccount}
+        deleteAccount={deleteStudentAccount}
+        importAccount={importAccountsFromExcel}
+      />
+    </React.Suspense>
+  )
 }

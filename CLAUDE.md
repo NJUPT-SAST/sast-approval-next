@@ -41,7 +41,7 @@ pnpm format:check     # Check formatting without writing
 pnpm typecheck        # TypeScript --noEmit
 
 # Testing
-pnpm test             # Run Jest tests (14 suites / 95 tests)
+pnpm test             # Run Jest tests (17 suites / 128 tests)
 pnpm test:watch       # Run tests in watch mode
 pnpm test:coverage    # Run tests with coverage report
 
@@ -108,7 +108,8 @@ components/
                            日期时间选择、文件拖拽、步骤条
   competition/             比赛卡片与表单、封面上传、时间区间、评委分配、白名单、公告
   schema-form/             轻量 JSON-Schema 表单引擎（替代旧版 form-render）
-  manage/                  共享账号管理组件（复用 CRUD 与导入逻辑）
+  manage/                  账号管理：AccountManager（增删改查）、AccountImportDialog（导入弹窗）、
+                           AccountImportView（整页导入，一键导入与审批人员的学生管理共用）
   ui/                      56 个 shadcn/ui 组件（**不要在此写测试**）
 
 hooks/use-mobile.ts        断点判断，供 components/ui/sidebar 使用
@@ -119,7 +120,9 @@ lib/
   store/                   Zustand：user（登录态）、ui（面包屑动态标题）
   constants/               表单模板、学院列表、报名 schema、站内信
   types/                   接口与业务类型
-  hooks/                   use-load-state（请求键驱动的加载状态）、use-logout、use-validate-code（登录验证码）
+  hooks/                   use-load-state（请求键驱动的加载状态）、use-query-params（列表状态写进地址栏）、
+                           use-logout、use-validate-code（登录验证码）
+  competition-validation.ts 创建 / 编辑比赛的提交前校验与 review_settings 整理
   navigation.ts            角色 → 菜单 / 路由白名单 / 面包屑
   storage.ts               localStorage 封装（键名与旧版兼容）
   file.ts / datetime.ts    下载、文件名、时间格式化
@@ -143,6 +146,23 @@ public/assets/             Logo、登录背景、头像等图片
 - **导航**：桌面端为侧边栏；手机端一级页面显示底部 `MobileTabBar`，子页面隐藏底栏、页头显示返回按钮
   （由 `isTopLevelPath()` 判定）。页脚只在 `md` 及以上显示。
 - Tailwind v4 的堆叠变体从左到右生效，作用于子元素请写 `[&>*:first-child]:…` 这类任意变体，不要写 `first:*:…`。
+
+### 交互约定
+
+- **列表状态放进地址栏**：分页、搜索词用 `useQueryParams()` + `readPositiveInt()` 读写，进入详情再返回能回到原来的页码。
+  写入走原生 `history.replaceState`（Next 会同步到 `useSearchParams`），不要改成 `router.replace`：
+  静态导出下带查询参数直接打开侧边栏页面后，同路径的 `router.replace` 会被预取缓存还原成原地址。
+  用到它的页面同样要包 `<Suspense>`。
+- **加载失败 ≠ 没有数据**：请求失败渲染 `ErrorState`（带「重新加载」），只有真的没有数据才用 `EmptyState`。
+- **提交失败不离开表单**：在表单末尾用 `Alert variant="destructive"` 提示，已填写的内容保留；
+  只有成功才切到 `ResultState`。表单校验失败时滚到并聚焦第一个出错的控件（`SchemaForm` 已内置，
+  其它表单用 `lib/focus-field.ts`）。
+- **按时间窗口给出可用状态**：报名、提交、评审超出时间范围时，按钮置灰并直接写明原因，不要等后端报错。
+- **删除确认**：`AlertDialogAction` 的 `onClick` 里 `event.preventDefault()`，等请求结束再关闭，期间显示加载态。
+- **整行可点的列表项里放菜单**：用 `MobileListItem` 的 `menu`，渲染在链接之外，不要把按钮嵌进 `<a>`。
+- **动画克制**：页面切换与列表加载完成用 `motion-safe:animate-fade-enter`（只动透明度，240ms），
+  折叠内容用 `animate-collapsible-down/up`。不要在页面容器上用 tw-animate 的 `animate-in`：
+  它的关键帧带 transform，动画期间会让页面里 `fixed` 的底部操作栏错位。
 
 ### 路由与查询参数
 

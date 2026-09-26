@@ -26,6 +26,9 @@ import { DateTimePicker } from "@/components/common/date-time-picker"
 import { EmptyState, LoadingState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { deleteCompetitionNotice, editNotice, releaseNotice } from "@/lib/api/admin"
+import { notifyRequestError } from "@/lib/api/errors"
+import { focusField } from "@/lib/focus-field"
+import { withQuery } from "@/lib/navigation"
 import { getCompetitionNoticeList } from "@/lib/api/public"
 import { getCompetitionInfo } from "@/lib/api/user"
 import { useUiStore } from "@/lib/store/ui"
@@ -50,6 +53,8 @@ function NoticeContent() {
 
   const { requestKey, loading, markLoaded } = useLoadState(`${competitionId}|${noticeId ?? ""}`)
   const [submitting, setSubmitting] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [notFound, setNotFound] = React.useState(false)
   const [competitionName, setCompetitionName] = React.useState("")
   const [pageState, setPageState] = React.useState({
     time: "",
@@ -88,7 +93,7 @@ function NoticeContent() {
                 role: target.role ?? -1,
               })
             } else {
-              toast.warning("未找到该公告", { description: "可能已被删除，请返回重试" })
+              setNotFound(true)
             }
           })
           .catch(() => undefined)
@@ -105,13 +110,21 @@ function NoticeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey])
 
+  /** 操作完成后回到上一页；直接打开链接进来的，回到比赛详情 */
+  const leave = () => {
+    if (window.history.length > 1) router.back()
+    else router.replace(withQuery("/activity/detail", { id: competitionId }))
+  }
+
   const validate = () => {
     if (!pageState.title.trim()) {
       toast.error("请填写公告标题")
+      focusField("notice-title")
       return false
     }
     if (!pageState.content.trim()) {
       toast.error("请填写公告内容")
+      focusField("notice-content")
       return false
     }
     return true
@@ -130,13 +143,13 @@ function NoticeContent() {
         pageState.time
       )
       if (res.data.success) {
-        toast.success("😸 发布成功")
-        router.back()
+        toast.success(pageState.time ? "😸 已设置定时发布" : "😸 公告已发布")
+        leave()
       } else {
-        toast.error("😭 发布失败", { description: res.data.errMsg ?? "" })
+        toast.error("😭 发布失败", { description: res.data.errMsg ?? "请稍后重试" })
       }
-    } catch {
-      toast.error("😭 发布失败")
+    } catch (error) {
+      notifyRequestError(error, "😭 发布失败", { description: "请稍后重试" })
     } finally {
       setSubmitting(false)
     }
@@ -155,12 +168,12 @@ function NoticeContent() {
       )
       if (res.data.success) {
         toast.success("😸 保存成功")
-        router.back()
+        leave()
       } else {
-        toast.error("😭 保存失败", { description: res.data.errMsg ?? "" })
+        toast.error("😭 保存失败", { description: res.data.errMsg ?? "请稍后重试" })
       }
-    } catch {
-      toast.error("😭 保存失败", { description: "快看看哪里出问题了" })
+    } catch (error) {
+      notifyRequestError(error, "😭 保存失败", { description: "请稍后重试" })
     } finally {
       setSubmitting(false)
     }
@@ -172,13 +185,14 @@ function NoticeContent() {
     try {
       const res = await deleteCompetitionNotice(noticeId)
       if (res.data.success) {
-        toast.success("😸 删除成功")
-        router.back()
+        toast.success("😸 公告已删除")
+        setDeleteOpen(false)
+        leave()
       } else {
-        toast.error("😭 删除失败", { description: "待会儿再试试吧" })
+        toast.error("😭 删除失败", { description: res.data.errMsg ?? "待会儿再试试吧" })
       }
-    } catch {
-      toast.error("😭 删除失败")
+    } catch (error) {
+      notifyRequestError(error, "😭 删除失败", { description: "请稍后重试" })
     } finally {
       setSubmitting(false)
     }
@@ -193,6 +207,26 @@ function NoticeContent() {
   }
 
   if (loading) return <LoadingState label="正在加载公告信息……" className="min-h-[60vh]" />
+
+  if (isEdit && notFound) {
+    return (
+      <PageContainer size="narrow">
+        <EmptyState
+          title="没有找到这条公告"
+          description="它可能已经被删除了。"
+          className="min-h-[50vh]"
+          action={
+            <Button
+              variant="outline"
+              onClick={() => router.replace(withQuery("/activity/detail", { id: competitionId }))}
+            >
+              返回比赛详情
+            </Button>
+          }
+        />
+      </PageContainer>
+    )
+  }
 
   const primaryAction = isEdit ? (
     <Button onClick={saveNotice} disabled={submitting}>
@@ -215,7 +249,7 @@ function NoticeContent() {
   )
 
   const deleteDialog = isEdit ? (
-    <AlertDialog>
+    <AlertDialog open={deleteOpen} onOpenChange={(open) => !submitting && setDeleteOpen(open)}>
       <AlertDialogTrigger asChild>
         <Button
           variant="ghost"
@@ -234,12 +268,18 @@ function NoticeContent() {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>
           <AlertDialogAction
-            onClick={removeNotice}
+            onClick={(event) => {
+              // 等请求结束再关闭，失败时弹窗还在，可以直接重试
+              event.preventDefault()
+              void removeNotice()
+            }}
+            disabled={submitting}
             className="bg-destructive hover:bg-destructive/90 text-white"
           >
-            确认删除
+            {submitting ? <Loader2Icon className="size-4 animate-spin" /> : null}
+            {submitting ? "正在删除…" : "确认删除"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

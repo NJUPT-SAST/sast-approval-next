@@ -46,10 +46,11 @@ export function WhiteListForm({
           <FileDropzone
             value={fileList}
             onChange={onFileChange}
-            accept=".csv,.xlsx,.xlx"
+            accept=".csv,.xlsx,.xls"
+            maxSize={5 * 1024 * 1024}
             maxCount={1}
             title="点击或将文件拖入以上传白名单"
-            hint="仅支持上传单个文件，格式为 csv、xlsx、xlx"
+            hint="仅支持上传单个文件，格式为 csv、xlsx、xls"
             disabled={disabled}
           />
           <p className="text-muted-foreground flex items-start gap-2 text-xs leading-relaxed">
