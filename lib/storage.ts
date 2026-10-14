@@ -30,12 +30,14 @@ export function readStorage(key: string): string | null {
   }
 }
 
-export function writeStorage(key: string, value: string): void {
-  if (!isBrowser()) return
+export function writeStorage(key: string, value: string): boolean {
+  if (!isBrowser()) return false
   try {
     window.localStorage.setItem(key, value)
+    return true
   } catch {
-    /* 隐私模式下写入可能抛错，忽略 */
+    /* 隐私模式 / 配额写满时写入会抛错，返回 false 让调用方决定怎么提示 */
+    return false
   }
 }
 
@@ -48,11 +50,16 @@ export function removeStorage(key: string): void {
   }
 }
 
-export function clearStorage(): void {
-  if (!isBrowser()) return
-  try {
-    window.localStorage.clear()
-  } catch {
-    /* noop */
-  }
+/** 本应用写入过的存储键，供退出登录清理与跨标签页同步使用 */
+export const APP_STORAGE_KEYS: readonly string[] = Object.values(STORAGE_KEYS)
+
+/**
+ * 退出登录 / 登录失效时清理本应用自己写入的键。
+ *
+ * 不要用 `localStorage.clear()`：它会把同一域名下的所有键（包括别的标签页、同一
+ * 域名下别的应用的数据）一起删掉；而界面只认内存里的角色，于是会出现「看起来已
+ * 登录、请求却不带 Token」的状态，后端只会回 1005（TOKEN不能为空）。
+ */
+export function clearAppStorage(): void {
+  for (const key of APP_STORAGE_KEYS) removeStorage(key)
 }

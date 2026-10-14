@@ -1,7 +1,7 @@
 "use client"
 
 import { create } from "zustand"
-import { STORAGE_KEYS, clearStorage, readStorage, writeStorage } from "@/lib/storage"
+import { STORAGE_KEYS, clearAppStorage, readStorage, writeStorage } from "@/lib/storage"
 import type { UserProfile } from "@/lib/types/api"
 
 /** 用户角色：未登录 / 学生 / 评委(judge) / 审批审核人员(approver) / 管理员 */
@@ -84,10 +84,18 @@ export const useUserStore = create<UserStore>((set) => ({
   inboxPoint: "on",
 
   hydrate: () => {
-    const role = (readStorage(STORAGE_KEYS.userState) as UserRole | null) ?? "offline"
+    const stored = readStorage(STORAGE_KEYS.userState)
+    const token = readStorage(STORAGE_KEYS.token)
+    // 「已登录」必须同时持有 Token：只有 userState（例如别的标签页退出登录时把
+    // Token 清掉了）会让界面按已登录渲染，而每个接口都不带 Token，后端只会回
+    // 1005（TOKEN不能为空），用户看到的却是「请检查网络」。这里直接收敛回未登录。
+    const signedIn = stored !== null && stored !== "offline" && token !== null && token !== ""
+    if (!signedIn && stored !== null && stored !== "offline") {
+      writeStorage(STORAGE_KEYS.userState, "offline")
+    }
     set({
       hydrated: true,
-      role,
+      role: signedIn ? (stored as UserRole) : "offline",
       inboxPoint: readStorage(STORAGE_KEYS.inboxPoint) ?? "on",
       profile: {
         code: readStorage(STORAGE_KEYS.code) ?? "",
@@ -121,7 +129,8 @@ export const useUserStore = create<UserStore>((set) => ({
   },
 
   logout: () => {
-    clearStorage()
+    // 只清理本应用自己的键，不要 localStorage.clear()（见 lib/storage.ts）
+    clearAppStorage()
     writeStorage(STORAGE_KEYS.userState, "offline")
     set({ role: "offline", profile: EMPTY_PROFILE })
   },
