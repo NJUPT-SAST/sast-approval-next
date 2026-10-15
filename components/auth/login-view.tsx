@@ -94,7 +94,23 @@ export function LoginView() {
         return
       }
 
-      writeStorage(STORAGE_KEYS.token, res.data.data.token)
+      const token = typeof res.data.data?.token === "string" ? res.data.data.token : ""
+      if (token === "") {
+        toast.error("😭 登录失败", { description: "服务端没有返回登录凭证，请稍后重试" })
+        resetCaptcha()
+        setSubmitting(false)
+        return
+      }
+      // 写不进去（隐私模式、存储被禁用、配额已满）必须在这里说清楚：
+      // 否则会停在「界面已登录、请求却没有 Token」的状态，每个接口都报 1005
+      if (!writeStorage(STORAGE_KEYS.token, token)) {
+        toast.error("😭 无法保存登录状态", {
+          description: "浏览器禁止本站使用本地存储，请关闭隐私模式或允许存储后重试",
+        })
+        resetCaptcha()
+        setSubmitting(false)
+        return
+      }
       const role = roleNumberToState(res.data.data.role)
 
       // 先拿到个人信息再切换角色：角色一变 AppShell 就会渲染主界面，
