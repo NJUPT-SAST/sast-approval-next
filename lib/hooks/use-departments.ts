@@ -16,8 +16,12 @@ function fetchDepartments(): Promise<Department[]> {
   cache ??= getDepartmentList()
     .then((res) => {
       const list = (res.data?.data ?? []) as Department[]
-      // 后端 department.id 在建表语句里是 varchar，统一归一成数字再交给上层
-      return list.map((item) => ({ id: Number(item.id), name: item.name }))
+      // 后端 department.id 在建表语句里是 varchar，统一归一成数字再交给上层；
+      // 同时按数字排序：后端的 ORDER BY id 是字符串字典序，会排出 1,10,11,…,2,20,3，
+      // 学院下拉必须按学院代号（= id）的数值顺序展示
+      return list
+        .map((item) => ({ id: Number(item.id), name: item.name }))
+        .sort((a, b) => a.id - b.id)
     })
     .catch((error: unknown) => {
       cache = null
