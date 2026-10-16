@@ -2,6 +2,7 @@ import { AxiosError, AxiosHeaders } from "axios"
 import { toast } from "sonner"
 import {
   NETWORK_ERROR_TITLE,
+  STORAGE_ERROR_TITLE,
   TIMEOUT_ERROR_TITLE,
   isNetworkError,
   markNetworkErrorNotified,
@@ -14,17 +15,22 @@ jest.mock("sonner", () => ({
 
 const config = { headers: new AxiosHeaders() }
 
-/** DNS 解析失败：浏览器里表现为没有 response 的 ERR_NETWORK */
-function dnsError() {
+/**
+ * 「没拿到响应」的统一表现：断网、DNS 失败、连接被拒、被 CORS 拦截、代理断流
+ * 在浏览器里都一样，所以只能按这一层分类，不能断言具体原因。
+ */
+function noResponseError() {
   return new AxiosError("Network Error", "ERR_NETWORK", config)
 }
 
 describe("请求错误分类", () => {
   it("把没有响应的请求判定为网络层错误", () => {
-    expect(isNetworkError(dnsError())).toBe(true)
+    expect(isNetworkError(noResponseError())).toBe(true)
     expect(isNetworkError(new AxiosError("timeout", "ECONNABORTED", config))).toBe(true)
-    // 原生 fetch 在 DNS 解析失败时抛 TypeError
+    // 原生 fetch / XHR 在拿不到响应时抛 TypeError
     expect(isNetworkError(new TypeError("Failed to fetch"))).toBe(true)
+    // 直传对象存储被 CORS 拦掉时，XHR 就是这么抛的
+    expect(isNetworkError(new TypeError("Network request failed"))).toBe(true)
   })
 
   it("拿到响应的业务错误与主动取消不算网络层错误", () => {
@@ -42,10 +48,27 @@ describe("请求错误分类", () => {
 
 describe("请求失败提示", () => {
   it("网络层错误提示更换网络环境，而不是联系管理员", () => {
-    notifyRequestError(dnsError(), "😞 下载发生了错误，请联系管理员", { id: "downloading" })
+    notifyRequestError(noResponseError(), "😞 下载发生了错误，请联系管理员", { id: "downloading" })
     expect(toast.error).toHaveBeenCalledWith(
       NETWORK_ERROR_TITLE,
       expect.objectContaining({ description: expect.stringContaining("更换网络环境") })
+    )
+  })
+
+  it("文案不把「没拿到响应」断言成 DNS 解析失败", () => {
+    notifyRequestError(noResponseError(), "😭 请求失败")
+    const description = (toast.error as jest.Mock).mock.calls[0][1].description as string
+    expect(description).not.toContain("无法解析服务器地址")
+  })
+
+  it("直传对象存储失败时提示跨域配置，而不是笼统的网络故障", () => {
+    notifyRequestError(new TypeError("Network request failed"), "a.pdf 上传失败", {
+      description: "请稍后重试",
+      context: "storage",
+    })
+    expect(toast.error).toHaveBeenCalledWith(
+      STORAGE_ERROR_TITLE,
+      expect.objectContaining({ description: expect.stringContaining("CORS") })
     )
   })
 
@@ -63,7 +86,7 @@ describe("请求失败提示", () => {
   })
 
   it("拦截器已提示过时不再重复弹窗，只收掉 loading", () => {
-    const error = dnsError()
+    const error = noResponseError()
     markNetworkErrorNotified(error)
     notifyRequestError(error, "😭 请求失败", { id: "download" })
     expect(toast.error).not.toHaveBeenCalled()

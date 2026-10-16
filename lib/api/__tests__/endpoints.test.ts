@@ -160,13 +160,13 @@ describe("用户接口", () => {
 
 describe("评审 / 审核接口", () => {
   it("列表与详情的查询参数", () => {
-    judge.getJudgeCompetitionList(2)
+    judge.getReviewCompetitionList(2)
     expect(lastCall().url).toBe("/review/competition-list?page=2")
 
-    judge.getJudgeWorkList(3, 4)
+    judge.getReviewWorkList(3, 4)
     expect(lastCall().url).toBe("/review/program-list?comId=3&page=4")
 
-    judge.getJudgeWorkInfo(9)
+    judge.getReviewWorkInfo(9)
     expect(lastCall().url).toBe("/review/program-info?id=9")
 
     judge.getScoreCompetitionList(2)
@@ -181,10 +181,10 @@ describe("评审 / 审核接口", () => {
     judge.getScoreWorkTotal(3)
     expect(lastCall().url).toBe("/score/total?comId=3")
 
-    judge.getJudgeWorkTotal(3)
+    judge.getReviewWorkTotal(3)
     expect(lastCall().url).toBe("/review/total?comId=3")
 
-    judge.judgePoint()
+    judge.reviewPoint()
     expect(lastCall().url).toBe("/review/red-point")
 
     judge.scorePoint()
@@ -192,7 +192,7 @@ describe("评审 / 审核接口", () => {
   })
 
   it("提交审核结论与评分", () => {
-    judge.uploadWorkJudgeInfo(9, false, "材料不全")
+    judge.uploadWorkReviewInfo(9, false, "材料不全")
     let config = lastCall()
     expect(config).toMatchObject({ method: "POST", url: "/review/upload" })
     expect((config.data as FormData).get("id")).toBe("9")
@@ -217,10 +217,10 @@ describe("评审 / 审核接口", () => {
     judge.uploadWorkScoreInfo(9, 88, "")
     expect((lastCall().data as FormData).get("opinion")).toBe("")
 
-    judge.uploadWorkJudgeInfo(9, true, undefined)
+    judge.uploadWorkReviewInfo(9, true, undefined)
     expect((lastCall().data as FormData).get("opinion")).toBe("")
 
-    judge.uploadWorkJudgeInfo(9, true, null)
+    judge.uploadWorkReviewInfo(9, true, null)
     expect((lastCall().data as FormData).get("opinion")).toBe("")
 
     // 有内容时必须原样透传
@@ -334,6 +334,17 @@ describe("管理端接口", () => {
     data = lastCall().data as FormData
     expect(data.get("isWhiteList")).toBe("true")
     expect(data.get("file")).toBeInstanceOf(File)
+  })
+
+  it("从 Excel 导入评委账号走管理员接口，而不是学生的一键导入", () => {
+    const file = new File(["x"], "judges.xlsx")
+    admin.importJudgeAccounts(file)
+    const config = lastCall()
+    expect(config).toMatchObject({ method: "POST", url: "/admin/judge/import?depId=1" })
+    expect((config.data as FormData).get("file")).toBeInstanceOf(File)
+
+    admin.importJudgeAccounts(file, 2)
+    expect(lastCall().url).toBe("/admin/judge/import?depId=2")
   })
 
   it("导入评委分配直接透传 FormData", () => {
