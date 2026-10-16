@@ -450,7 +450,9 @@ function ManageDetailContent() {
                 {importing ? "正在导入…" : "导入评委分配"}
               </Button>
               <p className="text-muted-foreground text-xs leading-relaxed">
-                评委模板含「作品id / 作品名称 / 项目类别」三列，填入评委学号后原表导入即可。
+                分配评委模板含「作品id / 作品名称 / 项目类别 /
+                评委学号」四列：在「评委学号」列填评委学号，
+                需要多个评委就往右继续复制几列（表头写成「评委学号1」「评委学号2」也能识别）。
                 项目附件为 zip 压缩包，参赛信息与评审结果为 xlsx 表格。
               </p>
               <p className="text-muted-foreground text-xs leading-relaxed">
