@@ -46,10 +46,12 @@
 `lib/api/__tests__/endpoints.test.ts` 用 19 个用例逐个断言，可作为回归基线。
 
 旧版存在但从未被 UI 调用的接口也一并保留：
-`fileDownload`、`getUserInfo`、`getSignedCompetitionList`、`deleteWork`、`uploadWork`、`judgePoint`、`scorePoint`。
+`fileDownload`、`getUserInfo`、`getSignedCompetitionList`、`deleteWork`、`uploadWork`、`reviewPoint`、`scorePoint`。
 
-新增 1 个接口封装：`importAccountsFromExcel`（`POST /review/import?depId=1`）。
-旧版把它硬编码在 antd `Upload` 的 `action` 里，现在收敛进接口层，请求本身没有变化。
+新增 2 个接口封装：`importAccountsFromExcel`（`POST /review/import?depId=1`，建学生）
+与 `importJudgeAccounts`（`POST /admin/judge/import?depId=1`，建评委）。
+旧版把前者硬编码在 antd `Upload` 的 `action` 里，现在收敛进接口层，请求本身没有变化；
+后者是旧版就存在、界面一直没接的管理员接口——评委管理页原先误用了「一键导入」的学生接口。
 
 唯一未迁移的是 `uploadFile`：旧版是 `apis({ method: 'post' })`，没有 URL，属于无效残留。
 

@@ -70,21 +70,24 @@ description: axios 封装、鉴权、基地址策略与 48 个接口清单
 
 ### 审核与评审（`lib/api/judge.ts`）
 
-| 方法                      | HTTP | URL                        |
-| ------------------------- | ---- | -------------------------- |
-| `getJudgeCompetitionList` | GET  | `/review/competition-list` |
-| `getJudgeWorkList`        | GET  | `/review/program-list`     |
-| `getJudgeWorkInfo`        | GET  | `/review/program-info`     |
-| `getJudgeWorkTotal`       | GET  | `/review/total`            |
-| `uploadWorkJudgeInfo`     | POST | `/review/upload`           |
-| `judgePoint`              | GET  | `/review/red-point`        |
-| `importAccountsFromExcel` | POST | `/review/import`           |
-| `getScoreCompetitionList` | GET  | `/score/competition-list`  |
-| `getScoreWorkList`        | GET  | `/score/program-list`      |
-| `getScoreWork`            | GET  | `/score/program-info`      |
-| `getScoreWorkTotal`       | GET  | `/score/total`             |
-| `uploadWorkScoreInfo`     | POST | `/score/upload`            |
-| `scorePoint`              | GET  | `/score/red-point`         |
+| 方法                       | HTTP | URL                        |
+| -------------------------- | ---- | -------------------------- |
+| `getReviewCompetitionList` | GET  | `/review/competition-list` |
+| `getReviewWorkList`        | GET  | `/review/program-list`     |
+| `getReviewWorkInfo`        | GET  | `/review/program-info`     |
+| `getReviewWorkTotal`       | GET  | `/review/total`            |
+| `uploadWorkReviewInfo`     | POST | `/review/upload`           |
+| `reviewPoint`              | GET  | `/review/red-point`        |
+| `importAccountsFromExcel`  | POST | `/review/import`           |
+| `getScoreCompetitionList`  | GET  | `/score/competition-list`  |
+| `getScoreWorkList`         | GET  | `/score/program-list`      |
+| `getScoreWork`             | GET  | `/score/program-info`      |
+| `getScoreWorkTotal`        | GET  | `/score/total`             |
+| `uploadWorkScoreInfo`      | POST | `/score/upload`            |
+| `scorePoint`               | GET  | `/score/red-point`         |
+
+`/review/*` 是**审批审核人员**（后端 role 1 = `approver`）的接口，`/score/*` 是**评委**（role 2 = `judge`）的接口；
+后端 `@CheckRole` 判 `role >= 要求值`（`/score/*` 要求 2），所以 role 1 调 `/score/*` 一律 1004 无权限。
 
 ### 管理员（`lib/api/admin.ts`）
 
@@ -100,6 +103,7 @@ description: axios 封装、鉴权、基地址策略与 48 个接口清单
 | `assignJudge`                      | POST | `/admin/judge/assign`        |
 | `getJudgeAccountList`              | GET  | `/admin/judge/list`          |
 | `createJudgeAccount`               | POST | `/admin/judge/create`        |
+| `importJudgeAccounts`              | POST | `/admin/judge/import`        |
 | `editJudgeAccount`                 | POST | `/admin/judge/edit`          |
 | `deleteJudgeAccount`               | POST | `/admin/judge/delete`        |
 | `getStudentAccountList`            | GET  | `/admin/student/list`        |
@@ -121,7 +125,7 @@ description: axios 封装、鉴权、基地址策略与 48 个接口清单
 
 旧版就存在、界面上没有入口的接口一并保留，避免后续需要时重新对接：
 `fileDownload`、`getUserInfo`、`getSignedCompetitionList`、`deleteWork`、`uploadWork`、
-`judgePoint`、`scorePoint`。
+`reviewPoint`、`scorePoint`。
 
 ## 与旧版的两处请求差异
 
