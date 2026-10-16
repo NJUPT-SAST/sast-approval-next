@@ -38,21 +38,37 @@ export type JudgeFormValues = {
 }
 
 /**
- * 新增 / 编辑评委表单的字段校验。
+ * 账号学号的校验口径。
+ * - `student`：必须是 B21031234 这类学生学号（学生账号、参赛队员用）
+ * - `any`：只要非空即可（评委账号，工号 / SAST30 这类编号都允许）
+ */
+export type AccountCodeRule = "student" | "any"
+
+/**
+ * 新增 / 编辑账号表单的字段校验。
  * 纯函数，返回 `字段名 → 错误文案`，没有问题时返回空对象。
  *
  * 编辑时学号不可改、密码留空表示不重置，所以只在填了密码时才校验长度。
+ *
+ * @param values  表单值
+ * @param isEdit  是否编辑态
+ * @param codeRule 学号口径，默认按学生学号校验
  */
-export function validateJudgeForm(values: JudgeFormValues, isEdit: boolean) {
+export function validateJudgeForm(
+  values: JudgeFormValues,
+  isEdit: boolean,
+  codeRule: AccountCodeRule = "student"
+) {
   const errors: Record<string, string> = {}
 
   if (!values.code.trim()) errors.code = "请输入学号"
-  else if (!isStudentCode(values.code)) errors.code = STUDENT_CODE_MESSAGE
+  else if (codeRule === "student" && !isStudentCode(values.code)) errors.code = STUDENT_CODE_MESSAGE
 
   if (!values.name.trim()) errors.name = "请输入姓名"
 
-  if (!values.contact.trim()) errors.contact = "请输入联系方式"
-  else if (!isPhone(values.contact)) errors.contact = PHONE_MESSAGE
+  // 联系方式选填（留空时后端把 extra 落库为 NULL）；填了就必须是合法手机号
+  const contact = values.contact.trim()
+  if (contact && !isPhone(contact)) errors.contact = PHONE_MESSAGE
 
   const passwordRequired = !isEdit || values.password !== ""
   if (passwordRequired && values.password.length < MIN_PASSWORD_LENGTH) {

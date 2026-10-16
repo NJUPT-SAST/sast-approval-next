@@ -55,7 +55,7 @@ import { AccountImportDialog } from "@/components/manage/account-import-dialog"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { readPositiveInt, useQueryParams } from "@/lib/hooks/use-query-params"
 import type { AccountRow } from "@/lib/excel-accounts"
-import { validateJudgeForm } from "@/lib/validation"
+import { validateJudgeForm, type AccountCodeRule } from "@/lib/validation"
 
 export type AccountRecord = {
   code: string
@@ -84,6 +84,11 @@ export type AccountManagerProps = {
   editAccount: (data: AccountRecord & { password?: string }) => Promise<ApiResult>
   deleteAccount: (code: string) => Promise<ApiResult>
   importAccount: (file: File) => Promise<ApiResult<AccountRow[]>>
+  /**
+   * 学号口径：`student`（默认）要求 B21031234 这类学生学号；
+   * 评委账号传 `any`，只要求非空（工号 / SAST30 这类编号都能录）
+   */
+  codeRule?: AccountCodeRule
 }
 
 /** 共用的新增 / 编辑账号表单弹窗 */
@@ -95,6 +100,7 @@ function AccountFormDialog({
   onSaved,
   createAccount,
   editAccount,
+  codeRule,
 }: {
   entity: string
   open: boolean
@@ -103,6 +109,7 @@ function AccountFormDialog({
   onSaved: () => void
   createAccount: (data: AccountRecord & { password: string }) => Promise<ApiResult>
   editAccount: (data: AccountRecord & { password?: string }) => Promise<ApiResult>
+  codeRule: AccountCodeRule
 }) {
   const isEdit = editing !== null
   const [values, setValues] = React.useState({
@@ -122,7 +129,7 @@ function AccountFormDialog({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const nextErrors = validateJudgeForm(values, isEdit)
+    const nextErrors = validateJudgeForm(values, isEdit, codeRule)
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) {
       const first = (["code", "name", "contact", "password"] as const).find(
@@ -181,7 +188,7 @@ function AccountFormDialog({
               id={`form-${entity}-code`}
               value={values.code}
               disabled={isEdit}
-              placeholder="如 B21021021"
+              placeholder={codeRule === "student" ? "如 B21021021" : "请输入学号或工号"}
               autoFocus={!isEdit}
               aria-invalid={Boolean(errors.code)}
               onChange={setField("code")}
@@ -200,12 +207,12 @@ function AccountFormDialog({
             {errors.name ? <p className="text-destructive text-xs">{errors.name}</p> : null}
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`form-${entity}-contact`}>联系方式</Label>
+            <Label htmlFor={`form-${entity}-contact`}>联系方式（选填）</Label>
             <Input
               id={`form-${entity}-contact`}
               value={values.contact}
               inputMode="tel"
-              placeholder="请输入手机号"
+              placeholder="选填，11 位手机号"
               aria-invalid={Boolean(errors.contact)}
               onChange={setField("contact")}
             />
@@ -283,6 +290,7 @@ export default function AccountManager({
   editAccount,
   deleteAccount,
   importAccount,
+  codeRule = "student",
 }: AccountManagerProps) {
   // 页码放在地址栏，刷新或返回时不丢
   const { params, setParams } = useQueryParams()
@@ -499,6 +507,7 @@ export default function AccountManager({
         onSaved={reload}
         createAccount={createAccount}
         editAccount={editAccount}
+        codeRule={codeRule}
       />
 
       <AccountImportDialog
@@ -508,6 +517,7 @@ export default function AccountManager({
         onOpenChange={(open) => setImportDialog((prev) => ({ ...prev, open }))}
         onImported={reload}
         importAccount={importAccount}
+        codeRule={codeRule}
       />
 
       <AlertDialog
