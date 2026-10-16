@@ -26,11 +26,11 @@ import { Section, SectionList, InfoRow } from "@/components/common/section"
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import {
-  getJudgeWorkInfo,
-  getJudgeWorkList,
+  getReviewWorkInfo,
+  getReviewWorkList,
   getScoreWork,
   getScoreWorkList,
-  uploadWorkJudgeInfo,
+  uploadWorkReviewInfo,
   uploadWorkScoreInfo,
 } from "@/lib/api/judge"
 import { getCompetitionInfo } from "@/lib/api/user"
@@ -138,12 +138,13 @@ const MAX_SCAN_PAGES = 20
 function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; page: number }) {
   const router = useRouter()
   const role = useUserStore((state) => state.role)
-  const isApprover = role === "approver"
-  const actionLabel = isApprover ? "评审" : "审核"
+  // 后端 role 2 = judge = 评委 → 评分表单（/score/*）；role 1 = approver = 审批审核人员 → 审核表单（/review/*）
+  const isScorer = role === "judge"
+  const actionLabel = isScorer ? "评审" : "审核"
   const setPageLabel = useUiStore((state) => state.setPageLabel)
 
   const [dataList, setDataList] = React.useState<ProgramInfo>(EMPTY_INFO)
-  const { requestKey, loading, markLoaded, reload } = useLoadState(`${id}|${isApprover}`)
+  const { requestKey, loading, markLoaded, reload } = useLoadState(`${id}|${isScorer}`)
   const [failed, setFailed] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [competitionName, setCompetitionName] = React.useState("")
@@ -166,7 +167,7 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
     if (!id) return
     let cancelled = false
 
-    const request = isApprover ? getScoreWork(id) : getJudgeWorkInfo(id)
+    const request = isScorer ? getScoreWork(id) : getReviewWorkInfo(id)
     request
       .then((res) => {
         if (cancelled) return
@@ -183,14 +184,14 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
           (member: { name: string; code: string }, index: number) => ({
             ...member,
             isCaptain:
-              index === 0 ? (isApprover ? "负责人" : "队长") : isApprover ? "团队成员" : "队员",
+              index === 0 ? (isScorer ? "负责人" : "队长") : isScorer ? "团队成员" : "队员",
           })
         )
         setFailed(false)
         setDataList({ ...EMPTY_INFO, ...result })
         setPageLabel(result.title || result.teamName || null)
         // 已经给过结论的项目，把原结论带出来，方便核对或修改
-        if (isApprover) {
+        if (isScorer) {
           if (result.score !== null && result.score !== undefined) setScore(String(result.score))
         } else if (typeof result.isPass === "boolean") {
           setIsPass(result.isPass)
@@ -238,15 +239,15 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
     // 从当前页往后找第一个还没处理的项目，最多翻 MAX_SCAN_PAGES 页
     try {
       for (let cursor = page; cursor < page + MAX_SCAN_PAGES; cursor += 1) {
-        const res = isApprover
+        const res = isScorer
           ? await getScoreWorkList(comId, cursor)
-          : await getJudgeWorkList(comId, cursor)
+          : await getReviewWorkList(comId, cursor)
         const result = res.data.data
         const list: ProgramListItem[] = result?.list ?? []
         const next = list.find(
           (item) =>
             item.id !== id &&
-            (isApprover ? !item.score : item.isPass !== true && item.isPass !== false)
+            (isScorer ? !item.score : item.isPass !== true && item.isPass !== false)
         )
         if (next) {
           toast.success("✅ 提交成功，已进入下一个项目", {
@@ -316,7 +317,7 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
     }
     setSubmitting(true)
     try {
-      const res = await uploadWorkJudgeInfo(id, isPass, opinion)
+      const res = await uploadWorkReviewInfo(id, isPass, opinion)
       if (res.data?.success) {
         await goNext()
       } else {
@@ -358,14 +359,14 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
       Number.isNaN(scoreNumber) ||
       scoreNumber < MIN_SCORE ||
       scoreNumber > MAX_SCORE)
-  const opinionMissing = triedSubmit && !isApprover && isPass === false && opinion.trim() === ""
+  const opinionMissing = triedSubmit && !isScorer && isPass === false && opinion.trim() === ""
   const locked = submitting || ended
 
   const submitButton = (
     <Button
       size="lg"
       className="w-full"
-      onClick={isApprover ? submitScore : submitJudge}
+      onClick={isScorer ? submitScore : submitJudge}
       disabled={locked}
     >
       {submitting ? (
@@ -381,7 +382,7 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
     <PageContainer size="wide">
       <PageHeader
         eyebrow={
-          [competitionName, isApprover && dataList.teamName ? `队伍：${dataList.teamName}` : ""]
+          [competitionName, isScorer && dataList.teamName ? `队伍：${dataList.teamName}` : ""]
             .filter(Boolean)
             .join(" · ") || undefined
         }
@@ -418,7 +419,7 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
             >
               <h2 className="text-base font-semibold tracking-tight">{actionLabel}结论</h2>
               <p className="text-muted-foreground mt-1 text-sm">
-                {isApprover
+                {isScorer
                   ? `请给出 ${MIN_SCORE}-${MAX_SCORE} 的分数，评语可选。`
                   : "请选择是否通过，未通过时必须填写意见。"}
               </p>
@@ -432,7 +433,7 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
               ) : null}
 
               <div className="mt-6 space-y-6">
-                {isApprover ? (
+                {isScorer ? (
                   <div className="space-y-2">
                     <Label htmlFor="review-score">
                       <span className="text-destructive me-0.5">*</span>评分
@@ -498,7 +499,7 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
 
                 <div className="space-y-2">
                   <Label htmlFor="review-opinion">
-                    {isApprover ? (
+                    {isScorer ? (
                       "评语"
                     ) : (
                       <>
@@ -512,7 +513,7 @@ function ReviewDetailContent({ id, comId, page }: { id: number; comId: number; p
                   <Textarea
                     id="review-opinion"
                     rows={6}
-                    placeholder={isApprover ? "请输入评语（可选）" : "未通过时请说明原因"}
+                    placeholder={isScorer ? "请输入评语（可选）" : "未通过时请说明原因"}
                     value={opinion}
                     disabled={locked}
                     aria-invalid={opinionMissing}
