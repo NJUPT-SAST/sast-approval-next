@@ -17,10 +17,22 @@ export function saveBlob(blob: Blob, filename: string) {
   window.URL.revokeObjectURL(href)
 }
 
+/**
+ * decodeURIComponent 遇到非法转义会抛 URIError（历史数据里文件名可能带裸 %，
+ * 例如 50%off.pdf），展示文件名不能因此崩掉。
+ */
+function safeDecode(value: string) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 /** 从 url 中截取文件名 */
 export function getFileNameFromUrl(url: string) {
   const urlParts = url.split("/")
-  return decodeURIComponent(urlParts[urlParts.length - 1].split("?")[0])
+  return safeDecode(urlParts[urlParts.length - 1].split("?")[0])
 }
 
 /**
@@ -29,9 +41,7 @@ export function getFileNameFromUrl(url: string) {
  */
 export function getOriginalFileName(url: string) {
   const nameList = url.split("/")
-  return decodeURIComponent(
-    nameList[nameList.length - 1].split("-").slice(2).join("-").split("?")[0]
-  )
+  return safeDecode(nameList[nameList.length - 1].split("-").slice(2).join("-").split("?")[0])
 }
 
 /**
