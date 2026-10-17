@@ -9,8 +9,8 @@ import {
   deleteJudgeAccount,
   editJudgeAccount,
   getJudgeAccountList,
+  importJudgeAccounts,
 } from "@/lib/api/admin"
-import { importAccountsFromExcel } from "@/lib/api/judge"
 
 export default function ManageJudgePage() {
   return (
@@ -24,9 +24,12 @@ export default function ManageJudgePage() {
         createAccount={createJudgeAccount}
         editAccount={editJudgeAccount}
         deleteAccount={deleteJudgeAccount}
-        // 账号表格（学号 / 姓名 / 联系方式）走一键导入接口；
-        // /admin/judge/assign 是「评委分配表」的上传接口，表头完全不同，不能混用
-        importAccount={importAccountsFromExcel}
+        // 账号表格（学号 / 姓名 / 联系方式）走 /admin/judge/import，建的是评委账号；
+        // 不能用「一键导入」的 /review/import（那里角色写死为学生），
+        // 也不能用 /admin/judge/assign（那是「评委分配表」的上传接口，表头完全不同）
+        importAccount={importJudgeAccounts}
+        // 评委账号的学号不做学生学号格式限制：工号 / SAST30 这类编号都能录入
+        codeRule="any"
       />
     </React.Suspense>
   )

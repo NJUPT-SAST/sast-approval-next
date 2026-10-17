@@ -19,6 +19,17 @@ import type { WidgetComponent, WidgetProps } from "./types"
 /** 单文件大小上限 500MB，与旧版一致 */
 const MAX_SIZE = 1024 * 1024 * 500
 
+/**
+ * 直传失败的状态码提示：这几个码基本都指向存储侧配置，而不是「网络不好」。
+ * 浏览器直传是跨域请求，被 CORS 拦掉时连状态码都拿不到（走 catch 分支）。
+ */
+function uploadFailureHint(status: number) {
+  if (status === 403) return "存储桶拒绝了这次上传：密钥权限或跨域（CORS）配置有问题"
+  if (status === 404) return "存储桶不存在或路径不对，请检查后端对象存储配置"
+  if (status === 0) return "请求被浏览器或网络代理拦截，请检查存储桶跨域（CORS）配置"
+  return `对象存储返回 HTTP ${status}`
+}
+
 type UploaderProps = WidgetProps & {
   inputName?: string
   accept?: string | string[]
@@ -65,14 +76,19 @@ export function createSchemaUploader(competitionId: number): WidgetComponent {
         }
         const putRes = await putFileWithProgress(payload.url, file, setProgress)
         if (!putRes.ok) {
-          toast.error(`${file.name} 上传失败`, { description: `HTTP ${putRes.status}` })
+          toast.error(`${file.name} 上传失败`, { description: uploadFailureHint(putRes.status) })
           return
         }
         setLocalName(file.name)
         onChange(payload.clearUrl ?? String(payload.url).split("?")[0])
         toast.success(`${file.name} 上传成功`)
       } catch (error) {
-        notifyRequestError(error, `${file.name} 上传失败`, { description: "请检查网络后重试" })
+        // 直传对象存储是浏览器发往 COS 域名的跨域请求，被 CORS / 代理拦掉时也是「没拿到响应」，
+        // 用 storage 上下文提示跨域配置，不要笼统说成网络故障
+        notifyRequestError(error, `${file.name} 上传失败`, {
+          description: "请稍后重试",
+          context: "storage",
+        })
       } finally {
         setUploading(false)
         setUploadingName(undefined)

@@ -68,6 +68,30 @@ describe("一键导入表格校验", () => {
     expect(formatIssue(result.issues[0])).toBe("第 3 行「学号」：学号「B21031234」与第 2 行重复")
   })
 
+  it("联系方式可以留空，填了才校验手机号", () => {
+    const result = checkAccountWorkbook(
+      makeWorkbook([HEADER, ["B21031234", "张三", ""], ["1234567890", "李四", "13900139000"]])
+    )
+    expect(result.issues).toEqual([])
+    expect(result.total).toBe(2)
+    expect(result.rows.map((row) => row.contact)).toEqual(["", "13900139000"])
+  })
+
+  it("评委账号表格不限制学号格式，但仍然校验重复与空值", () => {
+    const result = checkAccountWorkbook(
+      makeWorkbook([HEADER, ["SAST30", "张三", "13800138000"], ["A1", "李四", ""]]),
+      "any"
+    )
+    expect(result.issues).toEqual([])
+    expect(result.rows.map((row) => row.code)).toEqual(["SAST30", "A1"])
+
+    const dup = checkAccountWorkbook(
+      makeWorkbook([HEADER, ["SAST30", "张三", ""], ["SAST30", "李四", ""]]),
+      "any"
+    )
+    expect(formatIssue(dup.issues[0])).toContain("重复")
+  })
+
   it("整行空白跳过而不是报错", () => {
     const result = checkAccountWorkbook(
       makeWorkbook([HEADER, ["B21031234", "张三", "13800138000"], ["", "", ""]])

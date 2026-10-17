@@ -33,8 +33,8 @@ The backend returns a numeric `role` on login, mapped in `lib/store/user.ts`. Th
 | `role` | Key        | Chinese label | Capabilities                                                                  |
 | ------ | ---------- | ------------- | ----------------------------------------------------------------------------- |
 | 0      | `user`     | 参赛选手      | Browse competitions, sign up, submit project material                         |
-| 1      | `judge`    | 审核人员      | Screen submissions, bulk-import accounts from Excel                           |
-| 2      | `approver` | 评审专家      | Score submissions and leave comments                                          |
+| 1      | `approver` | 审批审核人员  | Screen submissions (`/review/*`), manage students, bulk-import accounts       |
+| 2      | `judge`    | 评委          | Score submissions and leave comments (`/score/*`)                             |
 | 3      | `admin`    | 系统管理员    | Create/edit competitions, notices, white lists, assign reviewers, export data |
 
 ## Prerequisites

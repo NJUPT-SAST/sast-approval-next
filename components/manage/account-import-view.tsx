@@ -39,6 +39,7 @@ import {
   type ImportCheckResult,
   checkAccountWorkbook,
 } from "@/lib/import-accounts"
+import type { AccountCodeRule } from "@/lib/validation"
 
 type ImportResult = {
   data: { success: boolean; data?: AccountRow[] | null; errMsg?: string | null }
@@ -53,12 +54,15 @@ export function AccountImportView({
   description,
   entity,
   importAccount,
+  codeRule = "student",
 }: {
   title: string
   description: string
   /** 账号类型，如「评委」「学生」 */
   entity: string
   importAccount: (file: File) => Promise<ImportResult>
+  /** 学号口径，评委账号传 `any`（不要求 B21031234 这类学生学号） */
+  codeRule?: AccountCodeRule
 }) {
   const [fileList, setFileList] = React.useState<File[]>([])
   const [uploading, setUploading] = React.useState(false)
@@ -85,7 +89,7 @@ export function AccountImportView({
     if (files.length === 0) return
     setChecking(true)
     try {
-      const result = checkAccountWorkbook(await files[0].arrayBuffer())
+      const result = checkAccountWorkbook(await files[0].arrayBuffer(), codeRule)
       setCheck(result)
       if (result.issues.length > 0) {
         toast.error(`表格有 ${result.issues.length} 处问题`, {

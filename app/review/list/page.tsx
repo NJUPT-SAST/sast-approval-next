@@ -23,7 +23,7 @@ import { MobileList, MobileListItem, TableSurface } from "@/components/common/da
 import { StatStrip } from "@/components/common/stat-strip"
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
-import { getJudgeWorkList, getScoreWorkList } from "@/lib/api/judge"
+import { getReviewWorkList, getScoreWorkList } from "@/lib/api/judge"
 import { getCompetitionInfo } from "@/lib/api/user"
 import { withQuery } from "@/lib/navigation"
 import { STORAGE_KEYS, writeStorage } from "@/lib/storage"
@@ -38,11 +38,12 @@ function ReviewListContent() {
   const comId = Number(params.get("comId"))
   const page = Number(params.get("page") ?? 1) || 1
   const role = useUserStore((state) => state.role)
-  const isApprover = role === "approver"
-  const actionLabel = isApprover ? "评审" : "审核"
+  // 后端 role 2 = judge = 评委 → 评分（走 /score/*）；role 1 = approver = 审批审核人员 → 审核（走 /review/*）
+  const isScorer = role === "judge"
+  const actionLabel = isScorer ? "评审" : "审核"
   const setPageLabel = useUiStore((state) => state.setPageLabel)
 
-  const { requestKey, loading, markLoaded, reload } = useLoadState(`${comId}|${page}|${isApprover}`)
+  const { requestKey, loading, markLoaded, reload } = useLoadState(`${comId}|${page}|${isScorer}`)
   const [failed, setFailed] = React.useState(false)
   const [programList, setProgramList] = React.useState<ProgramListItem[]>([])
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 10 })
@@ -67,9 +68,9 @@ function ReviewListContent() {
           setIsEnd(isPast(comDetail.reviewEnd))
         }
 
-        const listRes = isApprover
+        const listRes = isScorer
           ? await getScoreWorkList(comId, page)
-          : await getJudgeWorkList(comId, page)
+          : await getReviewWorkList(comId, page)
         if (cancelled) return
 
         const result = listRes.data.data
@@ -82,7 +83,7 @@ function ReviewListContent() {
         const list: ProgramListItem[] = result.list ?? []
         let completed = 0
 
-        if (isApprover) {
+        if (isScorer) {
           for (const item of list) {
             const scored = Boolean(item.score)
             item.isApprove = scored
@@ -147,17 +148,17 @@ function ReviewListContent() {
   const pageCount = programList.length
   const progress = pageCount > 0 ? Math.round((doneCount / pageCount) * 100) : 0
   const totalPages = Math.max(1, Math.ceil(meta.total / Math.max(1, meta.pageSize)))
-  const isDone = (record: ProgramListItem) => (isApprover ? record.isApprove : record.isJudge)
+  const isDone = (record: ProgramListItem) => (isScorer ? record.isApprove : record.isJudge)
   const nextPending = isEnd ? undefined : programList.find((record) => !isDone(record))
 
   const resultCell = (record: ProgramListItem) =>
-    isApprover ? (record.score ?? "—") : (record.isPass as string) || "—"
+    isScorer ? (record.score ?? "—") : (record.isPass as string) || "—"
 
   const statusBadge = (record: ProgramListItem) => {
     const done = isDone(record)
     return (
       <Badge variant={done ? "secondary" : "default"}>
-        {isApprover ? (done ? "已评分" : "待评分") : done ? "已审核" : "待审核"}
+        {isScorer ? (done ? "已评分" : "待评分") : done ? "已审核" : "待审核"}
       </Badge>
     )
   }
@@ -248,8 +249,8 @@ function ReviewListContent() {
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="w-14">#</TableHead>
                     <TableHead className="min-w-56">项目名称</TableHead>
-                    <TableHead className="w-24">{isApprover ? "评分" : "结论"}</TableHead>
-                    <TableHead className="min-w-48">{isApprover ? "评语" : "意见"}</TableHead>
+                    <TableHead className="w-24">{isScorer ? "评分" : "结论"}</TableHead>
+                    <TableHead className="min-w-48">{isScorer ? "评语" : "意见"}</TableHead>
                     <TableHead className="w-24">状态</TableHead>
                     <TableHead className="w-28 text-right">操作</TableHead>
                   </TableRow>
@@ -299,7 +300,7 @@ function ReviewListContent() {
                   meta={
                     <>
                       <span>
-                        {isApprover ? "评分" : "结论"}：
+                        {isScorer ? "评分" : "结论"}：
                         <span className="text-foreground font-mono">{resultCell(record)}</span>
                       </span>
                       {record.opinion ? (

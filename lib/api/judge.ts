@@ -9,7 +9,7 @@ import { apis } from "./client"
  * @param opinion 对通过情况的说明，为空时提交空字符串
  * @return axios 对象
  */
-export const uploadWorkJudgeInfo = (workId: number, accept: boolean, opinion?: string | null) => {
+export const uploadWorkReviewInfo = (workId: number, accept: boolean, opinion?: string | null) => {
   const data = new FormData()
   data.append("id", workId.toString())
   data.append("accept", accept.toString())
@@ -27,7 +27,7 @@ export const uploadWorkJudgeInfo = (workId: number, accept: boolean, opinion?: s
  * @param page 当前页数
  * @return axios 对象
  */
-export const getJudgeCompetitionList = (page: number) => {
+export const getReviewCompetitionList = (page: number) => {
   return apis({
     method: "get",
     url: "/review/competition-list?page=" + page,
@@ -40,7 +40,7 @@ export const getJudgeCompetitionList = (page: number) => {
  * @param page 当前页数
  * @return axios 对象
  */
-export const getJudgeWorkList = (comId: number, page: number) => {
+export const getReviewWorkList = (comId: number, page: number) => {
   return apis({
     method: "get",
     url: "/review/program-list?comId=" + comId + "&page=" + page,
@@ -52,7 +52,7 @@ export const getJudgeWorkList = (comId: number, page: number) => {
  * @param workId 项目id
  * @return axios 对象
  */
-export const getJudgeWorkInfo = (workId: number) => {
+export const getReviewWorkInfo = (workId: number) => {
   return apis({
     method: "get",
     url: "/review/program-info?id=" + workId,
@@ -116,7 +116,7 @@ export const getScoreWorkTotal = (workId: number) => {
  * @param workId 比赛id
  * @return axios 对象
  */
-export const getJudgeWorkTotal = (workId: number) => {
+export const getReviewWorkTotal = (workId: number) => {
   return apis({
     method: "get",
     url: "/review/total?comId=" + workId,
@@ -147,7 +147,7 @@ export const uploadWorkScoreInfo = (workId: number, score: number, opinion?: str
  * 审核红点
  * @return axios 对象
  */
-export const judgePoint = () => {
+export const reviewPoint = () => {
   return apis({
     method: "get",
     url: "/review/red-point",

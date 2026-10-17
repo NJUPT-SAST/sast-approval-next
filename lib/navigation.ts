@@ -24,13 +24,13 @@ export const NAV_BY_ROLE: Record<Exclude<UserRole, "offline">, NavItem[]> = {
     { href: "/activity", label: "比赛入口", icon: "send" },
     { href: "/review", label: "比赛审批", icon: "clipboard" },
     { href: "/review/student", label: "学生管理", icon: "students" },
+    { href: "/import", label: "一键导入", icon: "import" },
   ],
   judge: [
     { href: "/account", label: "我的账号", icon: "dashboard" },
     { href: "/inbox", label: "收件箱", icon: "inbox", badge: "inbox" },
     { href: "/activity", label: "比赛入口", icon: "send" },
     { href: "/review", label: "比赛评审", icon: "clipboard" },
-    { href: "/import", label: "一键导入", icon: "import" },
   ],
   user: [
     { href: "/account", label: "我的账号", icon: "dashboard" },
@@ -53,7 +53,7 @@ export function navItemHint(role: UserRole, href: string): string {
     case "/manage/student":
       return "新增、编辑学生账号，或从 Excel 批量导入"
     case "/review":
-      return role === "judge" ? "审核分配给你的参赛项目" : "为分配给你的参赛项目打分"
+      return role === "approver" ? "审核分配给你的参赛项目" : "为分配给你的参赛项目打分"
     case "/review/student":
       return "从 Excel 批量导入学生账号"
     case "/import":
@@ -90,6 +90,7 @@ const ROUTES_BY_ROLE: Record<Exclude<UserRole, "offline">, string[]> = {
     "/review/list",
     "/review/detail",
     "/review/student",
+    "/import",
   ],
   judge: [
     "/",
@@ -100,7 +101,6 @@ const ROUTES_BY_ROLE: Record<Exclude<UserRole, "offline">, string[]> = {
     "/review",
     "/review/list",
     "/review/detail",
-    "/import",
   ],
   user: [
     "/",
@@ -148,7 +148,7 @@ export function canAccess(role: UserRole, pathname: string) {
 
 /** 面包屑名称映射，沿用旧版 TopBar 的文案 */
 export function breadcrumbNameMap(role: UserRole): Record<string, string> {
-  const reviewValue = role === "judge" ? "比赛审核" : "比赛评审"
+  const reviewValue = role === "approver" ? "比赛审核" : "比赛评审"
   return {
     "/activity": "比赛入口",
     "/inbox": "收件箱",

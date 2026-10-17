@@ -22,13 +22,13 @@ describe("角色路由与导航", () => {
       "比赛入口",
       "比赛审批",
       "学生管理",
+      "一键导入",
     ])
     expect(NAV_BY_ROLE.judge.map((item) => item.label)).toEqual([
       "我的账号",
       "收件箱",
       "比赛入口",
       "比赛评审",
-      "一键导入",
     ])
     expect(NAV_BY_ROLE.user.map((item) => item.label)).toEqual(["我的账号", "收件箱", "比赛入口"])
   })
@@ -51,9 +51,11 @@ describe("角色路由与导航", () => {
     expect(canAccess("approver", "/activity/register")).toBe(false)
   })
 
-  it("一键导入只对审核人员开放", () => {
-    expect(canAccess("judge", "/import")).toBe(true)
-    expect(canAccess("approver", "/import")).toBe(false)
+  it("一键导入与学生管理都只对审批账号（approver = role 1）开放", () => {
+    expect(canAccess("approver", "/import")).toBe(true)
+    expect(canAccess("approver", "/review/student")).toBe(true)
+    expect(canAccess("judge", "/import")).toBe(false)
+    expect(canAccess("judge", "/review/student")).toBe(false)
     expect(canAccess("admin", "/import")).toBe(false)
   })
 
@@ -71,8 +73,8 @@ describe("角色路由与导航", () => {
   })
 
   it("审核人员与评审专家的面包屑文案不同", () => {
-    expect(breadcrumbNameMap("judge")["/review"]).toBe("比赛审核")
-    expect(breadcrumbNameMap("approver")["/review"]).toBe("比赛评审")
+    expect(breadcrumbNameMap("approver")["/review"]).toBe("比赛审核")
+    expect(breadcrumbNameMap("judge")["/review"]).toBe("比赛评审")
   })
 
   it("每个侧边栏菜单都有面包屑名称，页头不会显示成上一级", () => {

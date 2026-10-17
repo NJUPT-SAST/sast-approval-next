@@ -20,7 +20,7 @@ import { MobileList, MobileListItem, TableSurface } from "@/components/common/da
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { useLoadState } from "@/lib/hooks/use-load-state"
 import { readPositiveInt, useQueryParams } from "@/lib/hooks/use-query-params"
-import { getJudgeCompetitionList, getScoreCompetitionList } from "@/lib/api/judge"
+import { getReviewCompetitionList, getScoreCompetitionList } from "@/lib/api/judge"
 import { withQuery } from "@/lib/navigation"
 import { useUserStore } from "@/lib/store/user"
 import { toDateString } from "@/lib/datetime"
@@ -38,8 +38,9 @@ function PendingBadge({ pending }: { pending: number }) {
 
 function ReviewContent() {
   const role = useUserStore((state) => state.role)
-  const isJudge = role === "judge"
-  const actionLabel = isJudge ? "审核" : "评审"
+  // 后端 role 1 = approver = 审批审核人员 → 审核（走 /review/*）；role 2 = judge = 评委 → 评分（走 /score/*）
+  const isReviewer = role === "approver"
+  const actionLabel = isReviewer ? "审核" : "评审"
 
   const { params, setParams } = useQueryParams()
   const pageNum = readPositiveInt(params, "page", 1)
@@ -49,11 +50,13 @@ function ReviewContent() {
     pageSize: number
   } | null>(null)
   const [failed, setFailed] = React.useState(false)
-  const { requestKey, loading, markLoaded, reload } = useLoadState(`${isJudge}|${pageNum}`)
+  const { requestKey, loading, markLoaded, reload } = useLoadState(`${isReviewer}|${pageNum}`)
 
   React.useEffect(() => {
     let cancelled = false
-    const request = isJudge ? getJudgeCompetitionList(pageNum) : getScoreCompetitionList(pageNum)
+    const request = isReviewer
+      ? getReviewCompetitionList(pageNum)
+      : getScoreCompetitionList(pageNum)
     request
       .then((res) => {
         if (cancelled) return

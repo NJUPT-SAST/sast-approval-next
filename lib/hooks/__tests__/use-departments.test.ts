@@ -30,6 +30,25 @@ describe("useDepartments", () => {
     expect(result.current.departments).toEqual([{ id: 3, name: "甲学院" }])
   })
 
+  it("按学院代号数值顺序排序（后端 varchar 字典序会排成 1,10,11,2）", async () => {
+    mockedGet.mockResolvedValue({
+      data: {
+        data: [
+          { id: "1", name: "甲学院" },
+          { id: "10", name: "癸学院" },
+          { id: "11", name: "子学院" },
+          { id: "2", name: "乙学院" },
+          { id: "20", name: "亥学院" },
+        ],
+      },
+    })
+
+    const { result } = renderHook(() => useDepartments())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.departments.map((item) => item.id)).toEqual([1, 2, 10, 11, 20])
+  })
+
   it("多个组件同时使用时只发一次请求", async () => {
     mockedGet.mockResolvedValue({ data: { data: [{ id: 1, name: "甲学院" }] } })
 

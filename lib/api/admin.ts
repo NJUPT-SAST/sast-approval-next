@@ -176,6 +176,27 @@ export const createJudgeAccount = (data: {
 }
 
 /**
+ * 从 Excel 批量导入评委账号（管理员）
+ *
+ * 表头与「一键导入」一致（学号 / 姓名 / 联系方式），但后端建的是 role=2 的**评委**账号；
+ * `/review/import`（一键导入）里角色写死为 COMMON_STUDENT，建的是学生，两者不能混用。
+ * 也不能和 `/admin/judge/assign`（评委分配表）混用，那个表头完全不同。
+ *
+ * @param file 账号表格
+ * @param depId 部门 id，旧版固定为 1
+ * @return axios对象
+ */
+export const importJudgeAccounts = (file: File, depId = 1) => {
+  const data = new FormData()
+  data.append("file", file)
+  return apis({
+    method: "POST",
+    url: "/admin/judge/import?depId=" + depId,
+    data,
+  })
+}
+
+/**
  * 编辑评委账号（学号作为唯一标识，不可修改；密码留空表示不重置）
  * @param data 学号 / 姓名 / 联系方式 / 新密码（可选）
  * @return axios对象

@@ -54,19 +54,27 @@ describe("评委表单校验", () => {
     expect(validateJudgeForm(valid, true)).toEqual({})
   })
 
-  it("空字段各自给出必填提示", () => {
+  it("学号与姓名必填；联系方式选填（新增与编辑都可留空）", () => {
     expect(validateJudgeForm({ code: " ", name: "", contact: "  ", password: "" }, false)).toEqual({
       code: "请输入学号",
       name: "请输入姓名",
-      contact: "请输入联系方式",
       password: PASSWORD_MESSAGE,
     })
+    expect(validateJudgeForm({ ...valid, contact: "  " }, true)).toEqual({})
   })
 
   it("格式不对时用统一的规则文案", () => {
     const errors = validateJudgeForm({ ...valid, code: "A1", contact: "12345" }, false)
     expect(errors.code).toBe(STUDENT_CODE_MESSAGE)
     expect(errors.contact).toBe(PHONE_MESSAGE)
+  })
+
+  it("评委账号不限制学号格式（codeRule=any），但仍然不能为空", () => {
+    expect(validateJudgeForm({ ...valid, code: "SAST30" }, false, "any")).toEqual({})
+    expect(validateJudgeForm({ ...valid, code: "A1" }, false, "any")).toEqual({})
+    expect(validateJudgeForm({ ...valid, code: "  " }, false, "any").code).toBe("请输入学号")
+    // 默认口径仍是学生学号
+    expect(validateJudgeForm({ ...valid, code: "SAST30" }, false).code).toBe(STUDENT_CODE_MESSAGE)
   })
 
   it("新增必须填密码，编辑留空表示不重置", () => {

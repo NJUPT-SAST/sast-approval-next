@@ -17,7 +17,7 @@ import { PageContainer, MobileActionBar } from "@/components/common/page-header"
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states"
 import { CompetitionNotice } from "@/components/competition/competition-notice"
 import { useLoadState } from "@/lib/hooks/use-load-state"
-import { getJudgeWorkTotal, getScoreWorkTotal } from "@/lib/api/judge"
+import { getReviewWorkTotal, getScoreWorkTotal } from "@/lib/api/judge"
 import { getCompetitionNoticeList } from "@/lib/api/public"
 import { getCompetitionInfo, getTeamInfo } from "@/lib/api/user"
 import { withQuery } from "@/lib/navigation"
@@ -183,7 +183,7 @@ function ActivityDetailContent() {
         ? getTeamInfo(id).then((res) => {
             if (!cancelled) setIsSigned(res.data.errMsg !== "您还未报名该比赛")
           })
-        : (role === "approver" ? getScoreWorkTotal(id) : getJudgeWorkTotal(id)).then((res) => {
+        : (role === "approver" ? getReviewWorkTotal(id) : getScoreWorkTotal(id)).then((res) => {
             if (!cancelled) setEntranceAvailable(res.data.data !== 0)
           })
     request
@@ -243,7 +243,7 @@ function ActivityDetailContent() {
         }
       case "judge":
       case "approver": {
-        const verb = role === "judge" ? "审核" : "评审"
+        const verb = role === "approver" ? "审核" : "评审"
         if (!entranceAvailable) {
           return { label: `暂无待${verb}项目`, reason: `本比赛还没有分配给你${verb}的项目` }
         }

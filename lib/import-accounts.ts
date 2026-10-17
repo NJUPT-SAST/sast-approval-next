@@ -1,5 +1,11 @@
 import * as XLSX from "xlsx"
-import { PHONE_MESSAGE, STUDENT_CODE_MESSAGE, isPhone, isStudentCode } from "@/lib/validation"
+import {
+  PHONE_MESSAGE,
+  STUDENT_CODE_MESSAGE,
+  isPhone,
+  isStudentCode,
+  type AccountCodeRule,
+} from "@/lib/validation"
 
 /** 模板里的三列，导入表格必须包含 */
 export const REQUIRED_COLUMNS = ["学号", "姓名", "联系方式"] as const
@@ -47,8 +53,14 @@ function normalizeHeader(value: unknown) {
 /**
  * 解析并校验一键导入的账号表格。
  * 纯函数，不碰 DOM，方便单测。
+ *
+ * @param data     xlsx / xls 文件内容
+ * @param codeRule 学号口径：`student` 要求 B21031234 这类学号，`any` 只要求非空（评委账号）
  */
-export function checkAccountWorkbook(data: ArrayBuffer): ImportCheckResult {
+export function checkAccountWorkbook(
+  data: ArrayBuffer,
+  codeRule: AccountCodeRule = "student"
+): ImportCheckResult {
   const empty: ImportCheckResult = { rows: [], issues: [], blankRows: 0, total: 0 }
 
   let sheet: XLSX.WorkSheet | undefined
@@ -125,7 +137,7 @@ export function checkAccountWorkbook(data: ArrayBuffer): ImportCheckResult {
     const rowIssues: ImportIssue[] = []
     if (code === "") {
       rowIssues.push({ row, column: "学号", message: "学号不能为空" })
-    } else if (!isStudentCode(code)) {
+    } else if (codeRule === "student" && !isStudentCode(code)) {
       rowIssues.push({
         row,
         column: "学号",
@@ -144,9 +156,8 @@ export function checkAccountWorkbook(data: ArrayBuffer): ImportCheckResult {
       rowIssues.push({ row, column: "姓名", message: "姓名不能为空" })
     }
 
-    if (contact === "") {
-      rowIssues.push({ row, column: "联系方式", message: "联系方式不能为空" })
-    } else if (!isPhone(contact)) {
+    // 联系方式选填：留空时后端把 extra 落库为 NULL；填了就必须是合法手机号
+    if (contact !== "" && !isPhone(contact)) {
       rowIssues.push({
         row,
         column: "联系方式",
