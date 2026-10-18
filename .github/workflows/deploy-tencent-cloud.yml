@@ -14,17 +14,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: crs-production-frontend-deploy
+  group: approve-production-frontend-deploy
   cancel-in-progress: false
 
 env:
   NODE_VERSION: 20.x
   PNPM_VERSION: 10.30.3
-  DEPLOY_DIR: /www/crs.sast.fun
-  BACKUP_DIR: /www/crs.sast.fun.backup
+  DEPLOY_DIR: /www/approve.sast.fun
+  BACKUP_DIR: /www/approve.sast.fun.backup
   NEXT_PUBLIC_APP_NAME: "通用比赛管理评审系统"
-  NEXT_PUBLIC_API_BASE_URL: https://crs.sast.fun/api
-  NEXT_PUBLIC_API_ORIGIN: https://crs.sast.fun/api
+  NEXT_PUBLIC_API_BASE_URL: https://approve.sast.fun/api
+  NEXT_PUBLIC_API_ORIGIN: https://approve.sast.fun/api
 
 jobs:
   build:
@@ -76,12 +76,12 @@ jobs:
           retention-days: 7
 
   deploy:
-    name: Publish to crs.sast.fun
+    name: Publish to approve.sast.fun
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://crs.sast.fun
+      url: https://approve.sast.fun
 
     steps:
       - name: Download static export
@@ -124,7 +124,7 @@ jobs:
 
           port="${DEPLOY_PORT:-22}"
           tar -C out -czf "$archive_file" .
-          archive_name="crs-frontend-${GITHUB_SHA}.tar.gz"
+          archive_name="approve-frontend-${GITHUB_SHA}.tar.gz"
           scp \
             -i "$key_file" \
             -P "$port" \
@@ -142,7 +142,7 @@ jobs:
             "DEPLOY_DIR='$DEPLOY_DIR' BACKUP_DIR='$BACKUP_DIR' DEPLOY_ARCHIVE='/tmp/$archive_name' bash -s" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
-          staging_dir="$(mktemp -d /tmp/crs-frontend.XXXXXX)"
+          staging_dir="$(mktemp -d /tmp/approve-frontend.XXXXXX)"
           old_dir="${DEPLOY_DIR}.old"
           cleanup() {
             rm -rf "$staging_dir" "$old_dir" "$DEPLOY_ARCHIVE"
@@ -179,4 +179,4 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --location \
             --retry 5 --retry-delay 2 \
-            https://crs.sast.fun/ >/dev/null
+            https://approve.sast.fun/ >/dev/null
