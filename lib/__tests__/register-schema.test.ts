@@ -56,6 +56,7 @@ describe("报名表单 schema", () => {
     const codeRule = generateParticipantFields(2).parti1.properties?.code.rules?.[0]
       .pattern as RegExp
     expect(codeRule.test("B21021021")).toBe(true)
+    expect(codeRule.test("C26000614")).toBe(true)
     expect(codeRule.test("12345678901")).toBe(true)
     expect(codeRule.test("hello")).toBe(false)
 

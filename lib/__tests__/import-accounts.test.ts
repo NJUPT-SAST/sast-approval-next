@@ -26,6 +26,18 @@ describe("一键导入表格校验", () => {
     expect(result.rows[0].row).toBe(2)
   })
 
+  it("C 开头的新学号按学生学号规则校验通过", () => {
+    const result = checkAccountWorkbook(
+      makeWorkbook([
+        HEADER,
+        ["C26000614", "张三", "13800138000"],
+        ["B26000614", "李四", "13900139000"],
+      ])
+    )
+    expect(result.issues).toEqual([])
+    expect(result.rows.map((row) => row.code)).toEqual(["C26000614", "B26000614"])
+  })
+
   it("表头缺列时直接报错并指出缺了哪些", () => {
     const result = checkAccountWorkbook(
       makeWorkbook([
