@@ -85,7 +85,7 @@ export function buildRegisterSchema({
   maxParti,
   partiCount,
   teacherCount,
-  maxTeacher = 5,
+  maxTeacher = 3,
 }: RegisterSchemaOptions): SchemaNode {
   if (!isTeam) {
     return {

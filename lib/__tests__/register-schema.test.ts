@@ -40,7 +40,7 @@ describe("报名表单 schema", () => {
 
     const teacher = schema.properties?.listOfTeacher.properties ?? {}
     expect(Object.keys(teacher)).toEqual(["select_numOfTeacher", "teacher1", "teacher2"])
-    expect(teacher.select_numOfTeacher.max).toBe(5)
+    expect(teacher.select_numOfTeacher.max).toBe(3)
   })
 
   it("队员字段包含姓名 / 学号 / 联系方式与对应校验规则", () => {
