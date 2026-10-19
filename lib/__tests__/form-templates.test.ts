@@ -65,7 +65,7 @@ describe("项目提交表单模板", () => {
   it("学院下拉沿用完整的 20 个学院，顺序即审核学院代号", () => {
     expect(COLLEGES).toHaveLength(20)
     expect(COLLEGES[0]).toBe("通信与信息工程学院")
-    expect(COLLEGES[19]).toBe("波特兰学院")
+    expect(COLLEGES[19]).toBe("波特兰学院、欧洲塞浦路斯学院")
     expect(template[0].properties?.学院.enum).toEqual([...COLLEGES])
     expect(template[0].properties?.学院.enumNames).toEqual([...COLLEGES])
   })
