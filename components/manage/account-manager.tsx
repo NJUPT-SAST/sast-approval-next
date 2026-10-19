@@ -188,7 +188,7 @@ function AccountFormDialog({
               id={`form-${entity}-code`}
               value={values.code}
               disabled={isEdit}
-              placeholder={codeRule === "student" ? "如 B21021021" : "请输入学号或工号"}
+              placeholder={codeRule === "student" ? "如 B21021021 / C26000614" : "请输入学号或工号"}
               autoFocus={!isEdit}
               aria-invalid={Boolean(errors.code)}
               onChange={setField("code")}

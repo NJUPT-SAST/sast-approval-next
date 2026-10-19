@@ -11,9 +11,19 @@ import {
 describe("学号规则", () => {
   it("接受字母学号与 10 ~ 11 位纯数字", () => {
     expect(isStudentCode("B21031234")).toBe(true)
+    expect(isStudentCode("C26000614")).toBe(true)
     expect(isStudentCode("Q20120199")).toBe(true)
     expect(isStudentCode("1234567890")).toBe(true)
     expect(isStudentCode("12345678901")).toBe(true)
+  })
+
+  it("C 开头的 2026 级新学号与 B 共用同一段 8 位数字规则", () => {
+    expect(isStudentCode("C26000614")).toBe(true)
+    expect(isStudentCode("B26000614")).toBe(true)
+    // 数字部分仍是「年份 / 学院 / 班级 / 序号」，不合规的照旧拒绝
+    expect(isStudentCode("C99999999")).toBe(false)
+    expect(isStudentCode("C2600061")).toBe(false)
+    expect(isStudentCode("C260006140")).toBe(false)
   })
 
   it("整条规则必须完整匹配，不是包含匹配", () => {
