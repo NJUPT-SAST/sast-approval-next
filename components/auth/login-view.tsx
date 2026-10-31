@@ -33,7 +33,7 @@ type Field = "username" | "password" | "validate"
 const HIGHLIGHTS = [
   { icon: SparklesIcon, title: "一站式赛事管理", desc: "创建、报名、提交、评审全流程闭环" },
   { icon: ShieldCheckIcon, title: "分角色权限", desc: "选手 / 审核 / 评委 / 管理员各司其职" },
-  { icon: KeyRoundIcon, title: "统一身份认证", desc: "使用学号与密码即可登录系统" },
+  { icon: KeyRoundIcon, title: "统一身份认证", desc: "使用账号与密码即可登录系统" },
 ]
 
 export function LoginView() {
@@ -72,7 +72,7 @@ export function LoginView() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     const nextErrors: Partial<Record<Field, string>> = {}
-    if (!username.trim()) nextErrors.username = "请输入学号"
+    if (!username.trim()) nextErrors.username = "请输入账号"
     if (!password) nextErrors.password = "请输入密码"
     if (!validate.trim()) nextErrors.validate = "请输入验证码"
     setErrors(nextErrors)
@@ -222,12 +222,12 @@ export function LoginView() {
               priority
             />
             <h2 className="text-2xl font-bold tracking-tight">欢迎回来</h2>
-            <p className="text-muted-foreground text-sm">请使用学号与密码登录系统</p>
+            <p className="text-muted-foreground text-sm">请使用账号与密码登录系统</p>
           </div>
 
           <form className="space-y-5" onSubmit={handleSubmit} noValidate>
             <div className="space-y-2">
-              <Label htmlFor="login-username">学号</Label>
+              <Label htmlFor="login-username">账号</Label>
               <div className="relative">
                 <UserIcon className="text-muted-foreground pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2" />
                 <Input
@@ -235,7 +235,7 @@ export function LoginView() {
                   className="h-11 ps-9"
                   autoComplete="username"
                   autoFocus
-                  placeholder="请输入学号"
+                  placeholder="请输入账号"
                   value={username}
                   {...bindField("username", setUsername)}
                 />
