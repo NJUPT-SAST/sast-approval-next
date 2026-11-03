@@ -79,6 +79,8 @@ export default function AccountPage() {
   const role = useUserStore((state) => state.role)
   const inboxPoint = useUserStore((state) => state.inboxPoint)
   const logout = useLogout()
+  // 评委账号后端一律返回同一个学院（通院），展示出来只会误导，评委不显示学院
+  const hideCollege = role === "judge"
   const [loading, setLoading] = React.useState(true)
   const shortcuts =
     role === "offline"
@@ -114,7 +116,7 @@ export default function AccountPage() {
     { key: "college", title: "学院", content: profile.college, icon: BuildingIcon },
     { key: "major", title: "专业", content: profile.major, icon: GraduationCapIcon },
     { key: "contact", title: "联系方式", content: profile.contact, icon: PhoneIcon, mono: true },
-  ]
+  ].filter((item) => !(hideCollege && item.key === "college"))
 
   const accountInfo: InfoItem[] = [
     { key: "account", title: "账号（学号）", content: profile.code, icon: IdCardIcon, mono: true },
@@ -144,7 +146,7 @@ export default function AccountPage() {
             )}
             <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <span className="font-mono">{profile.code || "—"}</span>
-              {profile.college ? (
+              {!hideCollege && profile.college ? (
                 <>
                   <span className="bg-border hidden h-3 w-px sm:block" />
                   <span className="truncate">{profile.college}</span>
